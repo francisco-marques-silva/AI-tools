@@ -1,179 +1,324 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PICO Screening — Frontend</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI-Tools — Systematic Review Screening</title>
+  <link rel="icon" type="image/avif" href="logo.avif" />
   <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js';s.defer=true;document.head.appendChild(s);}())"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer
+    onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js';s.defer=true;document.head.appendChild(s);}())"></script>
   <script src="app.js" defer></script>
-  <style>.hidden{display:none;}</style>
 </head>
 <body>
-  <header class="appbar">
-    <div class="brand">
-      <img class="logo" src="logo.avif" alt="Project Logo" />
-      <h1>Title and Abstract Screening (PICO)</h1>
+
+  <!-- ===== HEADER ===== -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img src="logo.avif" alt="Logo" class="logo" />
+        <div>
+          <h1>AI-Tools</h1>
+          <span class="subtitle">Systematic Review Screening</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="serverStatus" class="server-badge offline" title="Backend status">
+          <span class="dot"></span> Offline
+        </span>
+      </div>
     </div>
-    
   </header>
 
+  <!-- ===== MAIN ===== -->
   <main class="container">
-    <section class="card">
-      <h2>Model</h2>
-      <div class="grid">
+
+    <!-- ===== STEP 1: Config Row ===== -->
+    <div class="grid-2col">
+
+      <!-- Card: Model & API Key -->
+      <section class="card" id="configCard">
+        <h2 class="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          Configuration
+        </h2>
+
         <label class="field">
-          <span>OpenAI Model</span>
+          <span>Model</span>
           <select id="modelSelect" required>
-            <option value="" disabled selected>Select a model...</option>
-            <!-- GPT-5.2 family -->
-            <option value="gpt-5.2">gpt-5.2</option>
-            <option value="gpt-5.2-pro">gpt-5.2-pro</option>
-            <!-- GPT-5 family -->
-            <option value="gpt-5">gpt-5</option>
-            <option value="gpt-5-pro">gpt-5-pro</option>
-            <option value="gpt-5-mini">gpt-5-mini</option>
-            <option value="gpt-5-nano">gpt-5-nano</option>
-            <!-- GPT-4.1 family -->
-            <option value="gpt-4.1">gpt-4.1</option>
-            <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-            <option value="gpt-4.1-nano">gpt-4.1-nano</option>
-            <!-- 4o family -->
-            <option value="gpt-4o">gpt-4o</option>
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-            <!-- Legacy -->
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+            <option value="" disabled>Select a model…</option>
+            <optgroup label="GPT-5 family (Reasoning)">
+              <option value="gpt-5.2">GPT-5.2</option>
+              <option value="gpt-5.2-pro">GPT-5.2 Pro</option>
+              <option value="gpt-5">GPT-5</option>
+              <option value="gpt-5-pro">GPT-5 Pro</option>
+              <option value="gpt-5-mini">GPT-5 Mini</option>
+              <option value="gpt-5-nano">GPT-5 Nano</option>
+            </optgroup>
+            <optgroup label="GPT-4.1 family">
+              <option value="gpt-4.1">GPT-4.1</option>
+              <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+              <option value="gpt-4.1-nano">GPT-4.1 Nano</option>
+            </optgroup>
+            <optgroup label="GPT-4o family">
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="gpt-4o-mini">GPT-4o Mini</option>
+            </optgroup>
+            <optgroup label="Legacy">
+              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+            </optgroup>
           </select>
         </label>
 
         <label class="field">
           <span>OpenAI API Key</span>
-          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off" />
         </label>
 
-        
-      </div>
-    </section>
+        <!-- Reasoning params -->
+        <div id="paramsReasoning" class="param-group hidden">
+          <div class="param-row">
+            <label class="field half">
+              <span>Verbosity</span>
+              <select id="verbosity">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label class="field half">
+              <span>Reasoning Effort</span>
+              <select id="reasoningEffort">
+                <option value="minimal">Minimal</option>
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+        </div>
 
-    <section class="card" id="paramsCard">
-      <h2>Parameters</h2>
-      <div id="paramsReasoning" class="grid hidden">
+        <!-- Chat params -->
+        <div id="paramsChat" class="param-group hidden">
+          <label class="field">
+            <span>Temperature (0–2)</span>
+            <input id="temperature" type="number" min="0" max="2" step="0.1" value="1.0" />
+          </label>
+        </div>
+
+        <div id="paramsWarning" class="field-warning hidden"></div>
+      </section>
+
+      <!-- Card: Study Context -->
+      <section class="card" id="contextCard">
+        <h2 class="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Study Context
+        </h2>
+
         <label class="field">
-          <span>Verbosity</span>
-          <select id="verbosity">
-            <option value="low">low</option>
-            <option value="medium" selected>medium</option>
-            <option value="high">high</option>
-          </select>
+          <span>PICO / Synopsis</span>
+          <textarea id="studySynopsis" rows="3" placeholder="e.g., We are reviewing the effects of minocycline on depressive-like behavior in rodents…"></textarea>
         </label>
-        <label class="field">
-          <span>Reasoning Effort</span>
-          <select id="reasoningEffort">
-            <option value="minimal">minimal</option>
-            <option value="low">low</option>
-            <option value="medium" selected>medium</option>
-            <option value="high">high</option>
-          </select>
-        </label>
-        
-      </div>
 
-      <div id="paramsChat" class="grid hidden">
-        <label class="field">
-          <span>Temperature (0-2)</span>
-          <input id="temperature" type="number" min="0" max="2" step="0.1" value="1.0" />
-        </label>
-        
-      </div>
-
-      <div id="paramsWarning" class="error-banner hidden"></div>
-    </section>
-
-    <section class="card">
-      <h2>Study Context</h2>
-      <label class="field">
-        <span>Question PICO</span>
-        <textarea id="studySynopsis" rows="3" placeholder="e.g., We are reviewing the effects of minocycline on depressive-like behavior in rodents…"></textarea>
-      </label>
-
-      <div class="grid">
-        <label class="field">
-          <span>Inclusion criteria</span>
+        <div class="criteria-section">
+          <div class="criteria-header">
+            <span>Inclusion Criteria</span>
+            <button type="button" id="addInc" class="btn-icon" title="Add criterion">+</button>
+          </div>
           <div id="inclusionList" class="criteria-list"></div>
-          <div class="actions"><button id="addInc" type="button" class="ghost">Add inclusion criterion</button></div>
-          <small>Each field is one criterion.</small>
-        </label>
+        </div>
 
-        <label class="field">
-          <span>Exclusion criteria</span>
+        <div class="criteria-section">
+          <div class="criteria-header">
+            <span>Exclusion Criteria</span>
+            <button type="button" id="addExc" class="btn-icon" title="Add criterion">+</button>
+          </div>
           <div id="exclusionList" class="criteria-list"></div>
-          <div class="actions"><button id="addExc" type="button" class="ghost">Add exclusion criterion</button></div>
-          <small>Each field is one criterion.</small>
-        </label>
-      </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===== Advanced Backend Settings ===== -->
+    <section class="card" id="advancedCard">
+      <details id="advancedDetails">
+        <summary class="card-title clickable">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          Advanced Backend Settings
+        </summary>
+
+        <div class="tier-selector">
+          <label class="field">
+            <span>OpenAI API Tier</span>
+            <select id="tierSelect">
+              <option value="" disabled>Select your tier…</option>
+              <option value="free">Free</option>
+              <option value="1">Tier 1</option>
+              <option value="2">Tier 2</option>
+              <option value="3" selected>Tier 3</option>
+              <option value="4">Tier 4</option>
+              <option value="5">Tier 5</option>
+            </select>
+          </label>
+          <p class="tier-hint">Select your OpenAI usage tier to auto-fill recommended concurrency settings. You can still adjust values manually. <a href="https://platform.openai.com/docs/guides/rate-limits/usage-tiers" target="_blank" rel="noopener">Check your tier</a></p>
+        </div>
+
+        <div class="advanced-grid">
+          <label class="field">
+            <span>Concurrent Workers</span>
+            <input id="adv_concurrent" type="number" min="1" max="100" />
+            <small>Initial parallel requests. Higher = faster but may trigger rate limits.</small>
+          </label>
+
+          <label class="field">
+            <span>Max Concurrency</span>
+            <input id="adv_concurrent_max" type="number" min="1" max="100" />
+            <small>Ceiling for AIMD auto-scaling. The system will never exceed this.</small>
+          </label>
+
+          <label class="field">
+            <span>Min Concurrency</span>
+            <input id="adv_concurrent_min" type="number" min="1" max="20" />
+            <small>Floor for AIMD. Even under heavy rate-limiting, concurrency won't drop below this.</small>
+          </label>
+
+          <label class="field">
+            <span>Record Max Retries</span>
+            <input id="adv_record_retries" type="number" min="1" max="10" />
+            <small>Max retry attempts per article on error. Failed records are marked "maybe" for manual review.</small>
+          </label>
+
+          <label class="field">
+            <span>AIMD Increase After</span>
+            <input id="adv_aiup_after" type="number" min="1" max="50" />
+            <small>Consecutive successes before adding +1 parallel slot. Lower = faster ramp-up.</small>
+          </label>
+
+          <label class="field">
+            <span>Max API Retries</span>
+            <input id="adv_max_retries" type="number" min="1" max="15" />
+            <small>Total retry attempts for transient API errors (5xx). Uses exponential backoff.</small>
+          </label>
+
+          <label class="field">
+            <span>Base Backoff (sec)</span>
+            <input id="adv_base_backoff" type="number" min="0.1" max="10" step="0.1" />
+            <small>Base delay for exponential backoff on errors. Actual delay = base × 2^attempt.</small>
+          </label>
+        </div>
+      </details>
     </section>
 
-    <section class="card">
-      <h2>Spreadsheet</h2>
-      <div class="uploader" id="dropzone">
+    <!-- ===== STEP 2: Spreadsheet Upload ===== -->
+    <section class="card" id="uploadCard">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
+        Spreadsheet
+      </h2>
+
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload spreadsheet">
         <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" />
-        <p class="muted">Drag and drop here or click to select .xlsx/.xls/.csv</p>
-        <p id="fileMeta" class="file-meta"></p>
+        <div class="dropzone-content">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>Drag &amp; drop <strong>.xlsx</strong>, <strong>.xls</strong>, or <strong>.csv</strong> here</p>
+          <p class="hint">or click to browse</p>
+        </div>
       </div>
 
-      <div id="sheetPickerWrap" class="sheet-picker hidden">
-        <label class="field">
+      <div class="upload-meta">
+        <span id="fileMeta"></span>
+      </div>
+
+      <div id="sheetPickerWrap" class="hidden">
+        <label class="field inline-field">
           <span>Sheet</span>
           <select id="sheetSelect"></select>
         </label>
       </div>
 
-      <div id="columnsStatus" class="status muted">Waiting for file…</div>
+      <div id="columnsStatus" class="columns-status">Waiting for file…</div>
 
       <div id="previewWrap" class="table-wrap hidden">
-        <table id="previewTable">
-          <thead></thead>
-          <tbody></tbody>
-        </table>
-        <small>Preview of the first 5 rows.</small>
+        <p class="preview-label">Preview — first 5 rows</p>
+        <div class="table-scroll">
+          <table id="previewTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
-    <section class="card actions">
-      <button id="btnGenerate" class="primary">Generate JSON payload</button>
-      <button id="btnSend" class="secondary" disabled>Send to backend</button>
-      <button id="btnClear" class="ghost">Clear spreadsheet</button>
-      <span id="saveHint" class="muted">Settings auto-save locally.</span>
+    <!-- ===== STEP 3: Actions ===== -->
+    <section class="card actions-card" id="actionsCard">
+      <div class="action-row">
+        <button id="btnSend" class="btn btn-primary" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send to Backend
+        </button>
+        <button id="btnGenerate" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          Preview JSON
+        </button>
+        <button id="btnClear" class="btn btn-ghost">Clear spreadsheet</button>
+        <span class="save-hint">Settings auto-save locally.</span>
+      </div>
       <div id="errorBanner" class="error-banner hidden"></div>
     </section>
 
+    <!-- ===== JSON Preview ===== -->
+    <section id="payloadCard" class="card hidden">
+      <div class="payload-header">
+        <h2 class="card-title">JSON Payload</h2>
+        <button id="btnCopy" class="btn btn-ghost">Copy</button>
+      </div>
+      <pre id="payloadOut" class="code"></pre>
+    </section>
+
+    <!-- ===== STEP 4: Progress ===== -->
     <section id="progressCard" class="card hidden">
-      <h2>Processing</h2>
-      <div class="progress">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Screening Progress
+      </h2>
+
+      <div class="progress-track">
         <div id="progressBar" class="progress-bar" style="width:0%"></div>
       </div>
-      <div id="progressLabel" class="muted">Awaiting…</div>
-      <div class="actions">
-        <button id="btnCancel" class="ghost">Cancel</button>
-        <a id="downloadLink" class="ghost hidden" href="#" download>Download result (CSV)</a>
-        <a id="downloadLinkXlsx" class="ghost hidden" href="#" download>Download result (XLSX)</a>
-        <button id="btnRestart" class="secondary hidden">Restart with same spreadsheet</button>
+      <div id="progressLabel" class="progress-label">Awaiting…</div>
+
+      <div class="progress-actions">
+        <button id="btnCancel" class="btn btn-danger">Cancel</button>
+        <a id="downloadLink" class="btn btn-primary hidden" href="#" download>Download CSV</a>
+        <a id="downloadLinkXlsx" class="btn btn-secondary hidden" href="#" download>Download XLSX</a>
+        <button id="btnRestart" class="btn btn-secondary hidden">Restart</button>
       </div>
-      <div class="actions" style="justify-content: space-between; margin-top:12px;">
-        <h3 class="muted" style="margin:0;">Live results (decision + rationale)</h3>
-        <button id="btnToggleLog" class="ghost">Show live log</button>
+
+      <div class="log-toggle-row">
+        <span class="muted">Live results (decision + rationale)</span>
+        <button id="btnToggleLog" class="btn btn-ghost">Show live log</button>
       </div>
-      <pre id="liveLog" class="code hidden" style="max-height:220px; overflow:auto;"></pre>
+      <pre id="liveLog" class="code hidden" style="max-height:240px; overflow:auto;"></pre>
     </section>
 
-    <section id="payloadCard" class="card hidden">
-      <h2>Generated payload</h2>
-      <pre id="payloadOut" class="code"></pre>
-      <button id="btnCopy" class="ghost">Copy</button>
-    </section>
   </main>
 
-  <footer class="footer"></footer>
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <p>AI-Tools &mdash; Systematic review screening with AI validation &middot; Settings auto-saved in browser</p>
+  </footer>
+
+  <!-- Server health polling -->
+  <script>
+    (async function healthLoop() {
+      const badge = document.getElementById('serverStatus');
+      try {
+        const r = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
+        if (r.ok) { badge.className = 'server-badge online'; badge.innerHTML = '<span class="dot"></span> Online'; }
+        else { badge.className = 'server-badge offline'; badge.innerHTML = '<span class="dot"></span> Offline'; }
+      } catch { badge.className = 'server-badge offline'; badge.innerHTML = '<span class="dot"></span> Offline'; }
+      setTimeout(healthLoop, 15000);
+    })();
+  </script>
 </body>
 </html>
-

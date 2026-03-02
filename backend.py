@@ -184,7 +184,8 @@ def build_prompt(synopsis: str, inc: List[str], exc: List[str], title: str, abst
     return "\n".join(parts)
 
 
-def call_openai_chat(model: str, prompt: str, api_key: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def call_openai_chat(model: str, prompt: str, api_key: str, params: Optional[Dict[str, Any]] = None,
+                     max_retries: int = MAX_RETRIES, base_backoff: float = BASE_BACKOFF) -> Dict[str, Any]:
     is_reasoning = model.startswith("gpt-5")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     # Build request target/body depending on model family
@@ -210,7 +211,7 @@ def call_openai_chat(model: str, prompt: str, api_key: str, params: Optional[Dic
 
     # Perform request with retries and exponential backoff (handles 5xx)
     r = None
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, max_retries + 1):
         r = requests.post(url, headers=headers, json=base_body, timeout=60)
         if r.status_code == 200:
             break
@@ -228,7 +229,7 @@ def call_openai_chat(model: str, prompt: str, api_key: str, params: Optional[Dic
         # Transient server errors: retry with backoff
         if r.status_code in (500, 502, 503, 504):
             jitter = random.uniform(0, 0.25)
-            sleep_s = BASE_BACKOFF * (2 ** (attempt - 1)) + jitter
+            sleep_s = base_backoff * (2 ** (attempt - 1)) + jitter
             time.sleep(min(sleep_s, 20.0))
             continue
         # Other errors: do not retry further
@@ -400,22 +401,49 @@ def worker(job_id: str):
     init_concurrency = CONCURRENT_WORKERS
     max_concurrency  = CONCURRENT_MAX
     min_concurrency  = CONCURRENT_MIN
+    aiup_after       = AIUP_AFTER
     if params:
         if params.get("concurrency"):
             try:
-                init_concurrency = max(1, min(int(params["concurrency"]), CONCURRENT_MAX))
+                init_concurrency = max(1, int(params["concurrency"]))
             except (ValueError, TypeError):
                 pass
         if params.get("concurrency_max"):
             try:
-                max_concurrency = max(1, min(int(params["concurrency_max"]), 30))
+                max_concurrency = max(1, int(params["concurrency_max"]))
             except (ValueError, TypeError):
                 pass
+        if params.get("concurrent_min"):
+            try:
+                min_concurrency = max(1, int(params["concurrent_min"]))
+            except (ValueError, TypeError):
+                pass
+        if params.get("aiup_after"):
+            try:
+                aiup_after = max(1, int(params["aiup_after"]))
+            except (ValueError, TypeError):
+                pass
+
+    # API-level retry / backoff (overridable via params)
+    api_max_retries = MAX_RETRIES
+    api_base_backoff = BASE_BACKOFF
+    if params:
+        if params.get("max_retries"):
+            try:
+                api_max_retries = max(1, min(int(params["max_retries"]), 20))
+            except (ValueError, TypeError):
+                pass
+        if params.get("base_backoff"):
+            try:
+                api_base_backoff = max(0.1, min(float(params["base_backoff"]), 10.0))
+            except (ValueError, TypeError):
+                pass
+
     adaptive = AdaptiveSemaphore(
         initial=init_concurrency,
         min_workers=min_concurrency,
         max_workers=max_concurrency,
-        increase_after=AIUP_AFTER,
+        increase_after=aiup_after,
     )
     job["concurrency_stats"] = adaptive.stats
 
@@ -440,7 +468,8 @@ def worker(job_id: str):
             attempts = attempt
             try:
                 with adaptive:
-                    out = call_openai_chat(model, prompt, api_key, params=params)
+                    out = call_openai_chat(model, prompt, api_key, params=params,
+                                           max_retries=api_max_retries, base_backoff=api_base_backoff)
                     # Validate: decision must be one of the expected values
                     decision = str(out.get("decision", "")).strip().lower()
                     if decision not in {"include", "exclude", "maybe"}:
@@ -457,7 +486,7 @@ def worker(job_id: str):
                 error_log.append(f"attempt {attempt} [rate-limit]: {err_msg[:120]}")
                 out = None
                 # Honour Retry-After from the API, fallback to exponential backoff
-                wait = e.retry_after if e.retry_after > 0 else BASE_BACKOFF * (2 ** (attempt - 1))
+                wait = e.retry_after if e.retry_after > 0 else api_base_backoff * (2 ** (attempt - 1))
                 time.sleep(min(wait + random.uniform(0, 0.5), 30.0))
 
             except Exception as e:
@@ -465,7 +494,7 @@ def worker(job_id: str):
                 error_log.append(f"attempt {attempt}: {err_msg[:120]}")
                 out = None
                 if attempt < record_max_retries:
-                    backoff = min(BASE_BACKOFF * (2 ** (attempt - 1)) + random.uniform(0, 0.3), 15.0)
+                    backoff = min(api_base_backoff * (2 ** (attempt - 1)) + random.uniform(0, 0.3), 15.0)
                     time.sleep(backoff)
 
             finally:
@@ -766,6 +795,7 @@ def result(job_id: str, format: str = "csv"):
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 # Run with: uvicorn backend:app --reload --port 8000
+#.\.venv\Scripts\python.exe -m uvicorn backend:app --reload --port 8000
 
 
 @app.get("/api/health")

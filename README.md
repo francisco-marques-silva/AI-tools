@@ -1,281 +1,496 @@
-# AI-Tools — Triagem por IA + Teste Diagnóstico
+# AI-Tools — Systematic Review AI Screening & Diagnostic Evaluation
 
-Plataforma para **triagem automatizada** de artigos científicos por IA (via OpenAI) e **avaliação diagnóstica** comparando as decisões da IA com revisores humanos em revisões sistemáticas.
+A platform for **automated screening** of scientific articles via OpenAI models and **diagnostic evaluation** comparing AI decisions against human reviewers in systematic reviews.
 
 ---
 
-## Estrutura do Projeto
+## Table of Contents
+
+1. [Project Structure](#project-structure)
+2. [Quick Start](#quick-start)
+3. [Web Application (AI Screening)](#part-1--web-application-ai-screening)
+4. [Listfinal Filter Utility](#part-2--listfinal-filter-utility-filter_listfinalpy)
+5. [Unified Multi-Project Report](#part-3--unified-multi-project-report)
+6. [External Validation Guide](#part-4--external-validation-guide)
+7. [Kappa Interpretation](#kappa-interpretation-landis--koch-1977)
+
+---
+
+## Project Structure
 
 ```
 AI-tools/
-├── backend.py                  ← Backend FastAPI (triagem por IA)
-├── index.html                  ← Frontend da aplicação web
-├── app.js                      ← Lógica do frontend (JS)
-├── style.css                   ← Estilos do frontend
-├── logo.avif                   ← Logo da aplicação
-├── diagnostic/                 ← Scripts de análise diagnóstica (por projeto)
-│   ├── 01_pareamento.py        ← Etapa 1: pareamento IA vs Humano
-│   ├── 02_analise_diagnostica.py ← Etapa 2: métricas + Word
-│   ├── 03_fulltext_check.py    ← Etapa 3: fulltext capture check
-│   ├── 04_test_reteste.py      ← Etapa 4: teste-reteste (reprodutibilidade)
-│   └── 05_falsos_positivos.py  ← Etapa 5: análise de falsos positivos
-├── report/                     ← Relatório unificado (multiprojeto)
-│   └── relatorio_unificado.py  ← Gera relatório Word consolidado
-├── input/                      ← Arquivos de entrada (não versionados)
-│   ├── YYYYMMDD - modelo - Xº teste - projeto.xlsx  ← Resultados da IA
-│   ├── Projeto - TIAB.xlsx     ← Decisão humana (TIAB)
-│   ├── Projeto - Fulltext.xlsx ← Decisão humana (Fulltext)
-│   └── metadados.xlsx          ← Metadados de execução
-├── output/                     ← Resultados gerados (não versionados)
-│   ├── relatorio_unificado_*.docx  ← Relatório unificado
-│   ├── pareamento.xlsx
-│   ├── sem_pareamento.xlsx
-│   ├── diagnostic_results_*.docx
-│   ├── fulltext_check_*.docx
-│   └── *.json
+├── backend.py                  ← FastAPI backend (AI screening)
+├── index.html                  ← Web application frontend
+├── app.js                      ← Frontend logic (JS)
+├── style.css                   ← Frontend styles
+├── logo.avif                   ← Application logo
+├── requirements.txt            ← Python dependencies
+├── filter_listfinal.py         ← Utility: filter Listfinal against reference PDFs
+├── report/                     ← Unified report (multi-project)
+│   └── relatorio_unificado.py  ← Generates consolidated Word report
+├── input/                      ← Input files (not versioned)
+│   ├── YYYYMMDD - model - Xº teste - project.xlsx  ← AI results
+│   ├── Project - TIAB.xlsx       ← Human decision (TIAB)
+│   ├── Project - Fulltext.xlsx   ← Articles selected for full-text reading
+│   ├── Project - Listfinal.xlsx  ← Final included articles
+│   └── metadata.xlsx             ← Execution metadata (cost, tokens, etc.)
+├── PDF/                        ← Reference PDFs with included-studies lists
+├── output/                     ← Generated reports (not versioned)
+│   └── relatorio_unificado_*.docx
 ├── .gitignore
 └── README.md
 ```
 
 ---
 
-## Pré-requisitos
+## Quick Start
 
-- **Python 3.10+**
-- Criar e ativar o ambiente virtual:
+### Prerequisites
 
-```bash
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# Linux/Mac
-source .venv/bin/activate
-```
+- **Python 3.10+** (tested up to 3.14)
+- An **OpenAI API key** (for AI screening)
 
-- Instalar dependências:
+### Installation
 
 ```bash
-pip install fastapi uvicorn python-dotenv requests pydantic
-pip install pandas numpy openpyxl python-docx
+# Clone the repository
+git clone https://github.com/YOUR-USER/AI-tools.git
+cd AI-tools
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-> **Nota:** O pacote correto é `python-docx` (não `docx`). Se tiver conflito: `pip uninstall docx -y && pip install python-docx`.
+If `requirements.txt` is not available, install manually:
+
+```bash
+pip install fastapi uvicorn requests pydantic
+pip install pandas numpy openpyxl python-docx PyPDF2
+```
+
+> **Note:** The correct package is `python-docx` (not `docx`). If there's a conflict: `pip uninstall docx -y && pip install python-docx`.
+
+### Running the Web App
+
+```bash
+uvicorn backend:app --port 8000
+```
+
+Open **http://localhost:8000** in your browser.
+
+### Generating Reports
+
+```bash
+# Windows: set encoding first if needed
+$env:PYTHONIOENCODING="utf-8"
+
+python report/relatorio_unificado.py
+```
+
+Output: `output/relatorio_unificado_YYYYMMDD_HHMMSS.docx`
 
 ---
 
-# Parte 1 — Aplicação Web (Triagem por IA)
+# Part 1 — Web Application (AI Screening)
 
-## O que faz
+## What It Does
 
-A aplicação web permite envio em lote de artigos científicos (título + abstract) para triagem automatizada via modelos da OpenAI. O backend processa cada artigo e retorna uma decisão de screening (`include`, `exclude` ou `maybe`) com justificativa.
+The web application allows batch submission of scientific articles (title + abstract) for automated screening via OpenAI models. The backend processes each article and returns a screening decision (`include`, `exclude`, or `maybe`) with rationale.
+
+## Frontend
+
+Modern, responsive UI with:
+- **Model selector** — GPT-5 family (reasoning models), GPT-4.1, GPT-4o, and legacy
+- **API key** input with localStorage persistence
+- **Parameters** — Reasoning (verbosity, effort) for GPT-5; Temperature for chat models
+- **Study context** — PICO synopsis + dynamic inclusion/exclusion criteria lists
+- **Advanced Backend Settings** — Collapsible panel with:
+  - **Tier selector** (Free, Tier 1–5) with auto-fill presets for all concurrency/retry fields
+  - Concurrent Workers, Max/Min Concurrency, Record Max Retries, AIMD Increase After, Max API Retries, Base Backoff
+  - Explanatory descriptions for each field; values persist in localStorage
+- **Spreadsheet upload** — Drag-and-drop for `.xlsx`, `.xls`, `.csv` with auto-detection of `title` and `abstract` columns
+- **Real-time progress** — SSE streaming with live log, concurrency display, cancel/restart
+- **Export** — Download results as CSV or XLSX
 
 ## Backend (`backend.py`)
 
-### Tecnologia
+### Technology
 
-- **FastAPI** com CORS habilitado
-- Comunicação com a **API da OpenAI** (modelos GPT-4o, GPT-5, etc.)
-- Gerenciamento de jobs em memória com threads
-- Progresso em tempo real via **Server-Sent Events (SSE)**
-- Exportação de resultados em **CSV** e **XLSX**
+- **FastAPI** with CORS
+- **OpenAI API** communication (GPT-4o, GPT-5 families)
+- In-memory job management with thread pools
+- Real-time progress via **Server-Sent Events (SSE)**
+- **Adaptive concurrency** (AIMD algorithm) — automatically adjusts parallelism based on rate-limit responses
+- Export results as **CSV** and **XLSX**
 
-### Como o código funciona
+### API Endpoints
 
-1. **`StartPayload`** (Pydantic model) — Recebe do frontend:
-   - `model`: modelo da OpenAI (ex: `gpt-4o`, `gpt-5`)
-   - `api_key`: chave da API do OpenAI
-   - `study_synopsis`: sinopse/PICO do estudo
-   - `inclusion_criteria` / `exclusion_criteria`: critérios de inclusão e exclusão
-   - `records`: lista de artigos com `title` e `abstract`
-   - `temperature`, `params`: parâmetros opcionais do modelo
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/start` | Start a screening job (returns `job_id`) |
+| `POST` | `/api/cancel/{job_id}` | Cancel a running job |
+| `GET` | `/api/status/{job_id}` | Job status (running/done/error/cancelled) |
+| `GET` | `/api/progress/{job_id}` | SSE stream of real-time progress |
+| `GET` | `/api/partial/{job_id}?since=N` | Partial results (paginated) |
+| `GET` | `/api/errors/{job_id}` | Errors encountered during processing |
+| `GET` | `/api/result/{job_id}?format=csv\|xlsx` | Final result as CSV or XLSX |
+| `GET` | `/api/health` | Server health check |
 
-2. **`build_prompt()`** — Monta o prompt de triagem com instruções detalhadas:
-   - Foco em **alta sensibilidade** (errar para inclusão, não para exclusão)
-   - Pede ao modelo um JSON com `decision`, `rationale`, `inclusion_evaluation`, `exclusion_evaluation`
-   - Instrui o modelo a marcar como `maybe` em caso de incerteza (não excluir)
+### Environment Variables
 
-3. **`call_openai_chat()`** — Faz a requisição HTTP para a API da OpenAI:
-   - Suporta tanto a API de **chat completions** (GPT-4o) quanto a API de **responses** (GPT-5)
-   - **Retry com backoff exponencial** para erros 429 (rate limit) e 5xx
-   - Respeita o header `Retry-After` quando presente
-   - Parseia o JSON da resposta com tratamento robusto de erros
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CONCURRENT_WORKERS` | `20` | Starting concurrent workers (AIMD initial) |
+| `CONCURRENT_MAX` | `40` | Maximum concurrent workers |
+| `CONCURRENT_MIN` | `2` | Minimum concurrent workers |
+| `RECORD_MAX_RETRIES` | `3` | Per-record retry attempts on error |
+| `AIUP_AFTER` | `5` | Consecutive successes before adding +1 worker |
+| `OPENAI_MAX_RETRIES` | `5` | Max retries per API call (5xx errors) |
+| `OPENAI_BASE_BACKOFF` | `1.0` | Base exponential backoff (seconds) |
 
-4. **`worker()`** — Thread que processa os artigos em background:
-   - Itera sobre cada record, chama a API, parseia o resultado
-   - Aplica **rate limiting** entre chamadas (mín. 0.6s por padrão)
-   - Registra progresso em tempo real (acessível via SSE)
-   - Suporta **cancelamento** do job em andamento
+All of the above can also be overridden **per-job** via the frontend Advanced Backend Settings panel. Values sent by the frontend take precedence over environment variables.
 
-### Endpoints
+---
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| `POST` | `/api/start` | Inicia um job de triagem (retorna `job_id`) |
-| `POST` | `/api/cancel/{job_id}` | Cancela um job em andamento |
-| `GET` | `/api/status/{job_id}` | Retorna status do job (running/done/error) |
-| `GET` | `/api/progress/{job_id}` | SSE stream de progresso em tempo real |
-| `GET` | `/api/partial/{job_id}` | Resultados parciais (paginados) |
-| `GET` | `/api/result/{job_id}?format=csv\|xlsx` | Resultado final como CSV ou XLSX |
+# Part 2 — Listfinal Filter Utility (`filter_listfinal.py`)
 
-### Frontend (`index.html`, `app.js`, `style.css`)
+## What It Does
 
-Interface web para:
-- Inserir API key, modelo, sinopse e critérios
-- Upload de planilha (CSV/XLSX) com artigos
-- Acompanhar progresso em tempo real
-- Visualizar e baixar resultados
+Filters `Project - Listfinal.xlsx` files by comparing against reference PDFs in `PDF/`. Removes articles that are **not** in the published included-studies list.
 
-O backend serve os arquivos estáticos do frontend automaticamente (montagem do diretório raiz).
+Uses **PyPDF2** for text extraction and applies **6 matching strategies** to handle formatting differences, OCR artifacts, and line breaks.
 
-### Como rodar
+### Usage
 
 ```bash
-uvicorn backend:app --reload --port 8000
+# Process all projects
+python filter_listfinal.py
+
+# Process specific projects
+python filter_listfinal.py mino NMDA zebra
 ```
 
-Acesse: **http://localhost:8000**
+### PDF ↔ Project Mapping
 
-### Variáveis de ambiente (.env)
-
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `RATE_LIMIT_MIN_INTERVAL` | `0.6` | Intervalo mínimo entre chamadas (segundos) |
-| `OPENAI_MAX_RETRIES` | `5` | Máximo de tentativas em caso de erro |
-| `OPENAI_BASE_BACKOFF` | `1.0` | Base do backoff exponencial (segundos) |
+| Project | PDF | Expected Articles |
+|---------|-----|-------------------|
+| mino | `list_included_studies_mino.pdf` | 28 |
+| NMDA | `list_included_studies_nmda.pdf` | 264 |
+| zebra | `list_included_studies_zebrafish.pdf` | 108 |
 
 ---
 
-# Parte 2 — Teste Diagnóstico (IA vs Humano)
+# Part 3 — Unified Multi-Project Report
 
-Os scripts em `diagnostic/` avaliam o desempenho da triagem automática da IA comparando com decisões de revisores humanos. Todos rodam a partir da raiz do projeto e usam as pastas `input/` e `output/`.
+## What It Does
+
+Generates a **single Word document** consolidating all analyses across **all projects and models** found in the `input/` folder. The script automatically detects all files by naming convention.
+
+## File Naming Conventions
+
+### AI Results
+
+```
+YYYYMMDD - model - Xº teste - project.xlsx
+```
+
+| Field | Example | Description |
+|-------|---------|-------------|
+| `YYYYMMDD` | `20260227` | Date/code of the spreadsheet |
+| `model` | `gpt-5-mini` | Model used |
+| `Xº teste` | `2º teste` | Test number (for test-retest) |
+| `project` | `zebra` | Project name |
+
+**Required columns:** `title`, `screening_decision`
+
+### Human Reference Spreadsheets
+
+| File | Example | Description |
+|------|---------|-------------|
+| TIAB | `zebra - TIAB.xlsx` | Human decision at title/abstract phase |
+| Fulltext | `zebra - Fulltext.xlsx` | Articles selected for full-text reading |
+| Listfinal | `zebra - Listfinal.xlsx` | Final included articles (gold standard) |
+
+**Required columns:** `title`, `decision` (+ `abstract` when available)
+
+### Metadata File (`metadata.xlsx`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `project` | text | Project name (must match file naming, e.g., `mino`, `zebra`, `NMDA`) |
+| `code` | text | Date/code matching the AI result filename |
+| `model` | text | Model name (must match AI result filename) |
+| `parameter` | text | Parameter configuration description |
+| `version` | text | Model version or variant |
+| `time_ia` | timedelta | AI execution time (HH:MM:SS format) |
+| `time_human` | timedelta | Estimated human time for equivalent task |
+| `tokens input` | numeric | Input tokens consumed |
+| `tokens_output` | numeric | Output tokens generated |
+| `cost_input` | numeric | Input token cost (USD) |
+| `cost_output` | numeric | Output token cost (USD) |
+| `cost_total` | numeric | Total cost (USD) |
+
+## Report Sections (12 + Appendices)
+
+The report begins with a **Methodological Notes & Report Guide** section that explains each subsequent section and defines key methodological concepts (binarization, gold standard hierarchy, Cohen's Kappa, workload reduction, absolute efficiency, and cost-effectiveness).
+
+### 1. Data Validation
+- Inventory of all detected files (includes Listfinal article counts)
+- Verification of AI files ↔ metadata correspondence
+- Alerts for missing data
+
+### 2. Metadata and Costs
+- Complete execution metadata table (model, parameters, time, tokens, cost)
+- Cost summary by project and by model
+
+### 3. Diagnostic Analysis (AI vs Human TIAB)
+For each **project × model × test**:
+- Comparative table (sensitivity, specificity, PPV, NPV, accuracy, F1, Kappa)
+- 2×2 confusion matrices (TP, FP, FN, TN)
+- Visual highlight: sensitivity ≥ 95% (green), < 80% (red)
+
+### 4. Fulltext Verification (Capture Rate)
+For each **project × model × test**:
+- Proportion of fulltext-selected articles that AI would have retained
+- List of missed articles (details in appendix)
+
+### 5. Listfinal Verification (Definitive Gold Standard)
+For each **project × model × test**:
+- Capture rate over the **final** included articles (post full-text reading)
+- This is the definitive measure: proportion of truly relevant articles the AI would have retained
+- Summary table with capture rate and miss rate
+
+### 6. Test-Retest (Reproducibility)
+For each **project × model**:
+- Exact and binarized agreement
+- Kappa with 95% CI
+- Confusion matrices (1st test × 2nd test)
+
+### 7. False Negatives
+- Articles included by humans but excluded by AI, per model and test
+
+### 8. False Positives
+- Articles excluded by humans but included by AI
+- FP rate over human-excluded articles
+
+### 9. General Comparative Table
+- Consolidated view: all metrics in one table (sensitivity, specificity, F1, Kappa, fulltext capture, **Listfinal capture**, test-retest Kappa, cost)
+
+### 10. Cost-Effectiveness
+- Cost (USD) vs. mean sensitivity per model
+- Cost per sensitivity point
+
+### 11. Workload Reduction Analysis
+- Per-execution table comparing human time vs. AI time
+- Time saved, reduction percentage, and speed factor
+- Per-project summary aggregating all executions
+
+### 12. Absolute Efficiency Analysis
+- TIAB volume vs. AI positive rate vs. Listfinal capture
+- Shows how much the AI reduces the screening workload while retaining relevant articles
+- Efficiency score = Listfinal Capture Rate × (1 − AI Positive Rate)
+
+### Appendices
+- **Appendix A — False Positives TIAB**: title, abstract, and which models flagged as FP
+- **Appendix B — Missed Fulltext Articles**: per-model matrix + detail with abstract (includes per-article × per-model miss/capture breakdown)
+
+### Methodological Notes
+
+Now placed at the **beginning** of the report (before Section 1) as a combined "Methodological Notes & Report Guide":
+- Section-by-section guide explaining what each section contains
+- Binarization: `include`/`maybe` → positive, `exclude` → negative
+- Gold standard hierarchy: Listfinal > Fulltext > TIAB
+- Workload reduction: based on `time_human` and `time_ia` columns
+- Absolute efficiency: measures both selectivity and capture simultaneously
+- Cohen's Kappa interpretation (Landis & Koch, 1977)
+- Cost-effectiveness methodology
 
 ---
 
-## Etapa 1 — Pareamento (`diagnostic/01_pareamento.py`)
+# Part 4 — External Validation Guide
 
-### O que faz
+This section explains how to **set up your own validation study** using this platform with your own systematic review data.
 
-- Lê os dois arquivos (IA e humano) da pasta `input/`
-- Pareia os artigos por **título normalizado** (lowercase, strip)
-- Lida com **títulos duplicados** usando um índice de ocorrência (`cumcount`) — se o mesmo título aparece 4x em ambos os arquivos, cada cópia é pareada separadamente
-- Lista os TIABs que **não foram pareados** (somente em um dos arquivos)
-- Salva em `output/pareamento.xlsx` (pareados) e `output/sem_pareamento.xlsx` (não pareados)
+## Overview
 
-### Auto-detecção
+The AI-Tools platform compares AI screening decisions against human reviewer decisions across three reference levels:
 
-Quando existem múltiplos arquivos em `input/`, o script detecta automaticamente:
-- **Arquivo da IA**: contém coluna `screening_decision`, maior número de registros
-- **Arquivo do Humano**: contém coluna `decision`, **maior** arquivo restante (prioriza o TIAB sobre fulltext)
+| Level | File | Purpose |
+|-------|------|---------|
+| **TIAB** | `Project - TIAB.xlsx` | Title/abstract screening decisions (primary comparison) |
+| **Fulltext** | `Project - Fulltext.xlsx` | Articles selected for full-text evaluation |
+| **Listfinal** | `Project - Listfinal.xlsx` | Final included articles after full-text reading (gold standard) |
 
-### Como rodar
+## Step-by-Step Setup
+
+### Step 1: Prepare Your TIAB Spreadsheet
+
+This is the **most important** file — it contains the human reviewer's screening decisions for every article.
+
+**File name:** `YourProject - TIAB.xlsx`
+
+**Required columns:**
+| Column | Description |
+|--------|-------------|
+| `title` | Article title — **must match exactly** with the AI result spreadsheet |
+| `abstract` | Article abstract (used for false-negative/positive analysis) |
+| `decision` | Human screening decision: `include`, `exclude`, or `maybe` |
+
+**Important:** The `title` column is the **join key** between human and AI spreadsheets. Titles must be character-for-character identical. If you exported TIABs from a reference manager (e.g., EndNote, Rayyan, Covidence), use the **exact same export** as the source for AI screening.
+
+### Step 2: Prepare Your Fulltext Spreadsheet
+
+Contains articles that passed TIAB screening and were selected for full-text evaluation.
+
+**File name:** `YourProject - Fulltext.xlsx`
+
+**Required columns:** `title`, `decision`
+
+All articles here should have `decision = include` (they were selected for full-text reading). The report checks whether the AI would have retained these articles during TIAB screening.
+
+### Step 3: Prepare Your Listfinal Spreadsheet
+
+Contains the **definitive** set of included articles after full-text reading. This is the gold standard.
+
+**File name:** `YourProject - Listfinal.xlsx`
+
+**Required columns:** `title`, `decision`
+
+Only articles that survived full-text evaluation should appear here. The report measures how many of these the AI would have retained — this is the most clinically relevant metric.
+
+### Step 4: Run AI Screening
+
+1. Start the web app: `uvicorn backend:app --port 8000`
+2. Open http://localhost:8000
+3. Select a model (e.g., GPT-5.2)
+4. Enter your API key
+5. Write your PICO synopsis and inclusion/exclusion criteria
+6. Upload your TIAB spreadsheet (the one with `title` + `abstract` columns)
+7. Click **Send to Backend**
+8. Wait for completion, then download the result
+
+**Naming the output:** Rename the downloaded file to match the convention:
+```
+YYYYMMDD - model - 1º teste - YourProject.xlsx
+```
+
+For test-retest analysis, run the same screening again and name it `2º teste`.
+
+### Step 5: Create Metadata Spreadsheet
+
+Create `metadata.xlsx` in the `input/` folder with one row per AI execution:
+
+| project | code | model | parameter | version | time_ia | time_human | tokens input | tokens_output | cost_input | cost_output | cost_total |
+|---------|------|-------|-----------|---------|---------|------------|--------------|---------------|------------|-------------|------------|
+| mino | 20260227 | gpt-5-mini | reasoning=medium | 5-mini | 0:04:32 | 2:00:00 | 152340 | 28450 | 0.023 | 0.114 | 0.137 |
+
+**Column details:**
+
+- **`project`**: Must match the project name in your file names (case-sensitive).
+- **`code`**: The YYYYMMDD prefix of your AI result file.
+- **`model`**: Must match the model name in your AI result file.
+- **`parameter`**: Free-text description of AI parameters used.
+- **`version`**: Model version or identifier.
+- **`time_ia`**: How long the AI took (format: `H:MM:SS` or `HH:MM:SS`).
+- **`time_human`**: Estimated time a human would take for the same task. This is used in the **Workload Reduction** analysis (Section 11). Estimate based on average screening speed (e.g., 30 seconds per article × number of articles).
+- **`tokens input` / `tokens_output`**: Token counts from the AI execution (available in the downloaded results or OpenAI dashboard).
+- **`cost_input` / `cost_output` / `cost_total`**: Costs in USD (available from OpenAI usage dashboard).
+
+### Step 6: Place All Files in `input/`
+
+Your `input/` folder should look like:
+
+```
+input/
+├── 20260227 - gpt-5-mini - 1º teste - mino.xlsx    ← AI result
+├── 20260227 - gpt-5-mini - 2º teste - mino.xlsx    ← AI result (retest)
+├── 20260228 - gpt-4o - 1º teste - mino.xlsx        ← AI result (different model)
+├── mino - TIAB.xlsx                                  ← Human TIAB decisions
+├── mino - Fulltext.xlsx                              ← Fulltext selections
+├── mino - Listfinal.xlsx                             ← Final included articles
+└── metadata.xlsx                                     ← Execution metadata
+```
+
+You can have **multiple projects** in the same folder. Just use different project names:
+
+```
+input/
+├── ... mino files ...
+├── ... zebra files ...
+├── ... NMDA files ...
+└── metadata.xlsx        ← Contains rows for ALL projects
+```
+
+### Step 7: Generate the Report
 
 ```bash
-# Modo automático
-python diagnostic/01_pareamento.py
+# Windows
+$env:PYTHONIOENCODING="utf-8"
+python report/relatorio_unificado.py
 
-# Modo manual
-python diagnostic/01_pareamento.py --ai input/arquivo_ia.xlsx --human input/arquivo_humano.xlsx
+# Linux / macOS
+PYTHONIOENCODING=utf-8 python report/relatorio_unificado.py
 ```
 
-### Formato dos arquivos
+The report is saved to `output/relatorio_unificado_YYYYMMDD_HHMMSS.docx`.
 
-| Arquivo | Colunas obrigatórias |
-|---------|----------------------|
-| IA | `title`, `screening_decision` |
-| Humano (TIAB) | `title`, `decision` |
+## Title Consistency Checklist
 
-> **Dica:** Se houver TIABs sem parear, revise e corrija os arquivos de entrada antes de prosseguir.
+Title matching is critical for accurate results. Common pitfalls:
+
+| Problem | Solution |
+|---------|----------|
+| Different capitalization | Matching is case-insensitive (handled automatically) |
+| Extra whitespace | Whitespace is normalized (handled automatically) |
+| Different special characters (e.g., `–` vs. `-`) | Export both human and AI data from the same source file |
+| Truncated titles | Ensure full titles in both spreadsheets |
+| HTML entities (e.g., `&amp;`) | Clean titles before use, or ensure consistent encoding |
+
+**Best practice:** Use the **exact same TIAB spreadsheet** as the source for both human review and AI screening. This guarantees title consistency.
+
+## Reusing TIAB Data
+
+The TIAB spreadsheet serves dual purposes:
+
+1. **Source for AI screening** — Upload it to the web app (the app uses `title` + `abstract` columns)
+2. **Human reference** — The `decision` column contains the human reviewer's judgment
+
+This means you only need **one** TIAB spreadsheet per project. The AI result file will have a `screening_decision` column added by the AI, while the original TIAB keeps the human `decision`.
+
+## Interpreting the Report
+
+### Key Metrics
+
+| Metric | What It Tells You | Good Value |
+|--------|-------------------|------------|
+| **Sensitivity** | % of human-included articles the AI also included | ≥ 95% |
+| **Specificity** | % of human-excluded articles the AI also excluded | ≥ 50% |
+| **Listfinal Capture** | % of final included articles the AI retained | ≥ 95% |
+| **Test-Retest Kappa** | Reproducibility of AI decisions across runs | ≥ 0.80 |
+| **Workload Reduction** | Time saved using AI vs. human screening | Higher is better |
+| **Efficiency Score** | Combined selectivity × capture (Section 12) | Higher is better |
+
+### Decision Flow
+
+```
+TIAB Screening → Sensitivity/Specificity (Section 3)
+       ↓
+Fulltext Capture → Section 4
+       ↓
+Listfinal Capture → Section 5 (most important!)
+       ↓
+Cost-Effectiveness → Section 10
+Workload Reduction → Section 11
+Absolute Efficiency → Section 12
+```
 
 ---
 
-## Etapa 2 — Análise Diagnóstica (`diagnostic/02_analise_diagnostica.py`)
+## Kappa Interpretation (Landis & Koch, 1977)
 
-### O que faz
-
-- Lê `output/pareamento.xlsx` (gerado na Etapa 1)
-- **Binariza** as decisões: `include` → `maybe` (para comparação uniforme)
-- Calcula a **matriz de confusão** (TP, FP, FN, TN)
-- Calcula **métricas diagnósticas completas**:
-  - Prevalência, Sensibilidade (Recall), Especificidade
-  - VPP (Precision), VPN, Acurácia, F1
-  - Likelihood Ratio + e −, Índice de Youden
-- Calcula **Cohen's Kappa** com erro padrão e IC 95%
-- Gera documento **Word (.docx)** com 5 tabelas formatadas para publicação
-
-### Lógica da Binarização
-
-A decisão humana é binária: `maybe` (inclui) ou `exclude`.
-A IA pode retornar `maybe`, `include` ou `exclude`. Como `maybe` e `include` são equivalentes (artigo passa para a próxima fase):
-
-```
-include → maybe    (positivo = artigo passa)
-exclude → exclude  (negativo = artigo eliminado)
-```
-
-### Tabelas geradas no Word
-
-| Tabela | Conteúdo |
-|--------|----------|
-| Table 1 | Sample Characteristics |
-| Table 2 | Confusion Matrix (2×2) |
-| Table 3 | Diagnostic Accuracy (todas as métricas) |
-| Table 4 | Inter-rater Agreement — Cohen's Kappa |
-| Table 5 | Summary of Results |
-
-As tabelas usam **Times New Roman**, bordas horizontais no estilo acadêmico, prontas para publicação.
-
-### Como rodar
-
-```bash
-python diagnostic/02_analise_diagnostica.py
-```
-
----
-
-## Etapa 3 — Fulltext Capture Check (`diagnostic/03_fulltext_check.py`)
-
-### O que faz
-
-Verifica se os artigos **incluídos na revisão final** (após leitura completa / fulltext) teriam sido **mantidos pela IA** durante a triagem de TIAB.
-
-- Lê o arquivo de artigos incluídos na revisão final (ex: 30 artigos)
-- Procura cada artigo na base de decisões da IA (ex: 973 artigos)
-- Verifica se a IA classificou como `maybe` ou `include` (passaria) vs `exclude` (perdido)
-- Calcula a **taxa de captura** (capture rate) e a **taxa de perda** (miss rate)
-- Gera:
-  - **Word (.docx)** com tabelas de resumo, detalhamento artigo-a-artigo, e lista de artigos perdidos (com highlight em vermelho)
-  - **XLSX** com a tabela detalhada
-  - **JSON** com o resumo
-
-### Auto-detecção
-
-- **Arquivo da IA**: contém `screening_decision`, > 50 registros
-- **Arquivo Fulltext**: menor arquivo restante (tipicamente 20-40 artigos)
-
-### Como rodar
-
-```bash
-# Modo automático
-python diagnostic/03_fulltext_check.py
-
-# Modo manual
-python diagnostic/03_fulltext_check.py --ai input/arquivo_ia.xlsx --fulltext input/arquivo_fulltext.xlsx
-```
-
-### Formato do arquivo fulltext
-
-| Coluna | Descrição |
-|--------|-----------|
-| `title` | Título do artigo incluído |
-| `abstract` | (Opcional) Abstract |
-| `decision` | (Opcional) Todas `include` |
-
----
-
-## Interpretação do Kappa (Landis & Koch, 1977)
-
-| Kappa | Concordância |
-|-------|-------------|
+| Kappa | Agreement |
+|-------|-----------|
 | < 0 | Poor |
 | 0.00–0.20 | Slight |
 | 0.21–0.40 | Fair |
@@ -285,141 +500,18 @@ python diagnostic/03_fulltext_check.py --ai input/arquivo_ia.xlsx --fulltext inp
 
 ---
 
-## Fluxo Completo de Uso
+## Troubleshooting
 
-```
-1. Rodar a triagem por IA na aplicação web (backend.py)
-   → Exportar resultado como .xlsx para input/
-
-2. Colocar arquivo humano TIAB em input/
-
-3. python diagnostic/01_pareamento.py
-   → output/pareamento.xlsx
-
-4. python diagnostic/02_analise_diagnostica.py
-   → output/diagnostic_results_*.docx  (métricas, kappa, tabelas)
-
-5. (Opcional) Colocar arquivo fulltext em input/
-   python diagnostic/03_fulltext_check.py
-   → output/fulltext_check_*.docx  (taxa de captura)
-```
+| Issue | Solution |
+|-------|----------|
+| `UnicodeEncodeError` on Windows | Set `$env:PYTHONIOENCODING="utf-8"` before running |
+| `No module named 'docx'` | Install `python-docx`: `pip install python-docx` |
+| Report finds no files | Check file naming conventions match exactly |
+| Metadata mismatch warnings | Ensure `project`, `code`, `model` in `metadata.xlsx` match AI result filenames |
+| XLSX library not loaded (web app) | Access via http://localhost:8000, not file:// |
+| `ModuleNotFoundError: uvicorn` | Install with `pip install uvicorn fastapi` |
 
 ---
 
-# Parte 3 — Relatório Unificado Multiprojeto (`report/relatorio_unificado.py`)
+## License
 
-## O que faz
-
-Gera um **único documento Word** consolidando todas as análises de **todos os projetos e modelos** encontrados na pasta `input/`. Ideal para cenários com múltiplos projetos, múltiplos modelos e teste-reteste.
-
-O script detecta automaticamente todos os arquivos pela nomenclatura e realiza **9 tipos de análise** em um único relatório.
-
-## Nomenclatura esperada dos arquivos
-
-### Resultados da IA
-
-```
-YYYYMMDD - modelo - Xº teste - projeto.xlsx
-```
-
-| Campo | Exemplo | Descrição |
-|-------|---------|-----------|
-| `YYYYMMDD` | `20260227` | Código/data da planilha |
-| `modelo` | `gpt-5-mini` | Modelo utilizado |
-| `Xº teste` | `2º teste` | Número do teste (teste-reteste) |
-| `projeto` | `zebra` | Nome do projeto |
-
-Colunas obrigatórias: `title`, `screening_decision`
-
-### Decisão humana
-
-| Arquivo | Exemplo | Descrição |
-|---------|---------|-----------|
-| TIAB | `zebra - TIAB.xlsx` | Decisão humana na fase de título/abstract |
-| Fulltext | `zebra - Fulltext.xlsx` | Artigos incluídos após leitura completa |
-
-Colunas obrigatórias: `title`, `decision`
-
-### Metadados
-
-Arquivo `metadados.xlsx` com colunas: `Projeto`, `código`, `modelo`, `Parâmetros`, `versão`, `tempo`, `tokens input`, `tokens output`, `custo input`, `custo output`, `total`.
-
-## Análises realizadas
-
-O relatório Word contém as seguintes seções:
-
-### 1. Validação dos Dados
-- Inventário de todos os arquivos detectados
-- Verificação de correspondência entre arquivos IA ↔ metadados
-- Alertas para dados faltantes (ex.: projeto sem referência humana)
-
-### 2. Metadados e Custos
-- Tabela completa de metadados de execução (modelo, parâmetros, tempo, tokens, custo)
-- Resumo de custos por projeto (total, médio)
-- Custo médio por modelo (cross-project)
-
-### 3. Análise Diagnóstica (IA vs Humano)
-Para cada **projeto × modelo × teste**:
-- Tabela comparativa entre modelos (sensibilidade, especificidade, VPP, VPN, acurácia, F1, Kappa)
-- Matrizes de confusão 2×2 detalhadas (TP, FP, FN, TN)
-- Destaque visual: sensibilidade ≥ 95% (verde), < 80% (vermelho)
-
-### 4. Verificação de Fulltext (Capture Rate)
-Para cada **projeto × modelo × teste**:
-- Taxa de captura: artigos do fulltext que a IA teria mantido
-- Taxa de perda: artigos que a IA teria descartado
-- Lista dos artigos perdidos por modelo
-
-### 5. Teste-Reteste (Reprodutibilidade)
-Para cada **projeto × modelo**:
-- Concordância exata (3 categorias) e binarizada
-- Kappa de teste-reteste com IC 95%
-- Matrizes de confusão 1º teste × 2º teste
-
-### 6. Falsos Negativos
-- Contagem de artigos incluídos pelo humano mas excluídos pela IA
-- Análise por modelo e teste
-
-### 7. Falsos Positivos
-- Contagem de artigos excluídos pelo humano mas incluídos pela IA
-- Taxa de FP sobre os artigos excluídos pelo humano
-
-### 8. Tabela Comparativa Geral
-- Visão consolidada: projeto × modelo × teste com todas as métricas em uma única tabela
-- Inclui sensibilidade, especificidade, F1, Kappa diagnóstico, captura fulltext, Kappa teste-reteste, custo
-
-### 9. Custo-Efetividade
-- Relação custo (USD) vs. sensibilidade média por modelo
-- Custo por ponto de sensibilidade (menor = melhor relação custo-benefício)
-
-### Notas Metodológicas
-- Descrição da binarização, gold standard, interpretação do Kappa, etc.
-
-## Como rodar
-
-```bash
-# Modo automático (detecta tudo em input/)
-python report/relatorio_unificado.py
-
-# Especificar pasta de entrada
-python report/relatorio_unificado.py --input_dir input/
-```
-
-### Saída
-
-O relatório é salvo em `output/relatorio_unificado_YYYYMMDD_HHMMSS.docx`.
-
-## Fluxo Completo (Multiprojeto)
-
-```
-1. Rodar a triagem por IA na aplicação web para cada projeto/modelo
-   → Exportar resultados com nomenclatura: YYYYMMDD - modelo - Xº teste - projeto.xlsx
-
-2. Colocar em input/:
-   - Todos os arquivos de resultado da IA
-   - Arquivos humanos: Projeto - TIAB.xlsx e Projeto - Fulltext.xlsx
-   - metadados.xlsx
-
-3. python report/relatorio_unificado.py
-   → output/relatorio_unificado_*.docx  (relatório completo)
-```

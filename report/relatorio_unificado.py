@@ -133,9 +133,9 @@ AI_FILE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Padrao do arquivo humano:  Projeto - TIAB.xlsx  ou  Projeto - Fulltext.xlsx
+# Padrao do arquivo humano:  Projeto - TIAB.xlsx, Projeto - Fulltext.xlsx ou Projeto - Listfinal.xlsx
 HUMAN_FILE_PATTERN = re.compile(
-    r"^(.+?)\s*-\s*(TIAB|Fulltext)\.xlsx$",
+    r"^(.+?)\s*-\s*(TIAB|Fulltext|Listfinal)\.xlsx$",
     re.IGNORECASE,
 )
 
@@ -178,7 +178,7 @@ def scan_input_dir(input_dir: Path):
             continue
         name = f.name
 
-        if name.lower() == "metadados.xlsx":
+        if name.lower() == "metadata.xlsx":
             metadados_path = f
             continue
 
@@ -224,6 +224,7 @@ def build_project_structure(ai_files, human_files, metadados_path):
                 "name": ai["project"],
                 "human_tiab": None,
                 "human_fulltext": None,
+                "human_listfinal": None,
                 "models": {},
             }
         if mn not in projects[pn]["models"]:
@@ -243,17 +244,23 @@ def build_project_structure(ai_files, human_files, metadados_path):
                 "name": hf["project"],
                 "human_tiab": None,
                 "human_fulltext": None,
+                "human_listfinal": None,
                 "models": {},
             }
         if hf["type"] == "tiab":
             projects[pn]["human_tiab"] = hf["path"]
         elif hf["type"] == "fulltext":
             projects[pn]["human_fulltext"] = hf["path"]
+        elif hf["type"] == "listfinal":
+            projects[pn]["human_listfinal"] = hf["path"]
 
     # Metadados
     metadados = None
     if metadados_path and metadados_path.is_file():
         metadados = pd.read_excel(metadados_path)
+        # Drop empty rows (trailing NaN rows in the spreadsheet)
+        if "project" in metadados.columns:
+            metadados = metadados.dropna(subset=["project"]).reset_index(drop=True)
 
     return projects, metadados
 
@@ -347,8 +354,12 @@ def do_pairing(ai_path: Path, human_path: Path):
     if "decision" in hu_df.columns:
         hu_df = hu_df.rename(columns={"decision": "decision_human"})
 
+    # Garantir coluna abstract no ai_df
+    if "abstract" not in ai_df.columns:
+        ai_df["abstract"] = ""
+
     merged = pd.merge(
-        ai_df[["title", "_merge_key", "screening_decision"]],
+        ai_df[["title", "abstract", "_merge_key", "screening_decision"]],
         hu_df[["_merge_key", "decision_human"]],
         on="_merge_key",
         how="outer",
@@ -390,12 +401,16 @@ def run_diagnostic(ai_path: Path, human_tiab_path: Path):
     k, se, ci_lo, ci_hi, interp = calc_kappa(tp, fp, fn, tn)
 
     # Collect titles of FP and FN articles
-    fp_titles = paired[
-        (paired["ai_bin"] == "maybe") & (paired["hu_bin"] == "exclude")
-    ]["title"].dropna().tolist()
-    fn_titles = paired[
-        (paired["ai_bin"] == "exclude") & (paired["hu_bin"] == "maybe")
-    ]["title"].dropna().tolist()
+    fp_mask = (paired["ai_bin"] == "maybe") & (paired["hu_bin"] == "exclude")
+    fn_mask = (paired["ai_bin"] == "exclude") & (paired["hu_bin"] == "maybe")
+
+    fp_titles = paired[fp_mask]["title"].dropna().tolist()
+    fn_titles = paired[fn_mask]["title"].dropna().tolist()
+
+    # Collect FP articles with abstract (for appendix)
+    fp_articles = (
+        paired[fp_mask][["title", "abstract"]].to_dict("records")
+    )
 
     return {
         "n_paired": len(paired),
@@ -403,6 +418,7 @@ def run_diagnostic(ai_path: Path, human_tiab_path: Path):
         "n_unpaired_hu": n_unpaired_hu,
         "tp": tp, "fp": fp, "fn": fn, "tn": tn,
         "fp_titles": fp_titles,
+        "fp_articles": fp_articles,
         "fn_titles": fn_titles,
         "metrics": metrics,
         "kappa": k, "kappa_se": se,
@@ -467,6 +483,71 @@ def run_fulltext_check(ai_path: Path, fulltext_path: Path):
         "n_fulltext": n_total,
         "n_found": int(n_found),
         "n_not_found": int(n_not_found),
+        "n_captured": n_captured,
+        "n_missed": n_missed,
+        "capture_rate": capture_rate,
+        "miss_rate": miss_rate,
+        "missed_titles": missed_titles,
+        "missed_articles": missed_articles,
+    }
+
+
+# ---- Listfinal Check ----
+
+def run_listfinal_check(ai_path: Path, listfinal_path: Path):
+    """
+    Verifica se os artigos da lista final de incluidos seriam mantidos pela IA
+    na triagem TIAB.  Semelhante ao fulltext check, mas usa a lista final
+    (gold standard definitivo — artigos que sobreviveram ao full-text reading).
+    """
+    ai_df = normalise_columns(load_file(str(ai_path)))
+    lf_df = normalise_columns(load_file(str(listfinal_path)))
+
+    ai_df["_title_key"] = ai_df["title"].apply(normalise_title)
+    lf_df["_title_key"] = lf_df["title"].apply(normalise_title)
+
+    results = []
+    for _, row in lf_df.iterrows():
+        tk = normalise_title(row["title"])
+        abstract = "" if pd.isna(row.get("abstract", "")) else str(row.get("abstract", "")).strip()
+        match = ai_df[ai_df["_title_key"] == tk]
+        if match.empty:
+            results.append({"title": row["title"], "abstract": abstract,
+                            "found": False, "ai_decision": "not_found"})
+        else:
+            ai_dec = normalise_decision(match.iloc[0]["screening_decision"])
+            captured = ai_dec in ("maybe", "include")
+            results.append({
+                "title": row["title"],
+                "abstract": abstract,
+                "found": True,
+                "ai_decision": ai_dec,
+                "captured": captured,
+            })
+
+    df_results = pd.DataFrame(results)
+    n_total = len(df_results)
+    n_found = int(df_results["found"].sum())
+    n_not_found = n_total - n_found
+
+    found_df = df_results[df_results["found"]].copy()
+    if not found_df.empty:
+        found_df["captured"] = found_df["captured"].astype(bool)
+    n_captured = int(found_df["captured"].sum()) if not found_df.empty else 0
+    n_missed = int((~found_df["captured"]).sum()) if not found_df.empty else 0
+    capture_rate = n_captured / n_found if n_found > 0 else float("nan")
+    miss_rate = n_missed / n_found if n_found > 0 else float("nan")
+
+    missed_titles = found_df[~found_df["captured"]]["title"].tolist() if not found_df.empty else []
+    missed_articles = (
+        found_df[~found_df["captured"]][["title", "abstract"]].to_dict("records")
+        if not found_df.empty else []
+    )
+
+    return {
+        "n_listfinal": n_total,
+        "n_found": n_found,
+        "n_not_found": n_not_found,
         "n_captured": n_captured,
         "n_missed": n_missed,
         "capture_rate": capture_rate,
@@ -653,6 +734,124 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     doc.add_page_break()
 
     # ==================================================================
+    #  METHODOLOGICAL NOTES & REPORT GUIDE (before Section 1)
+    # ==================================================================
+    add_heading(doc, "Methodological Notes & Report Guide", level=1)
+
+    # --- Overview of what follows ---
+    intro_p = doc.add_paragraph()
+    intro_p.paragraph_format.space_after = Pt(8)
+    run = intro_p.add_run(
+        "This report consolidates all analyses comparing AI-based screening decisions "
+        "against human reviewer decisions across multiple projects and models. "
+        "The sections below are organized progressively: from data validation through "
+        "diagnostic performance, reproducibility, error analysis, and cost-efficiency."
+    )
+    run.font.size = Pt(9)
+    run.font.name = "Times New Roman"
+
+    section_guide = [
+        ("Section 1 — Data Validation",
+         "Inventories all detected input files (AI results, human TIAB, Fulltext, Listfinal, metadata) "
+         "and checks correspondence between AI result files and metadata entries. "
+         "Alerts are raised for missing or unmatched data."),
+        ("Section 2 — Metadata and Costs",
+         "Displays the full execution metadata table (model, parameters, execution time, tokens, cost) "
+         "and provides cost summaries grouped by project and by model."),
+        ("Section 3 — Diagnostic Analysis (AI vs Human TIAB)",
+         "For each project × model × test, computes sensitivity, specificity, PPV, NPV, accuracy, F1, "
+         "and Cohen's Kappa by comparing AI screening decisions against the human TIAB reference. "
+         "Includes 2×2 confusion matrices."),
+        ("Section 4 — Fulltext Verification",
+         "Measures the capture rate: the proportion of articles selected for full-text reading "
+         "that the AI would have retained during TIAB screening. Missed articles are detailed in the Appendix."),
+        ("Section 5 — Listfinal Verification (Gold Standard)",
+         "The definitive performance measure. Shows the capture rate over the final included articles "
+         "(post full-text reading). A high Listfinal capture rate means the AI would not have missed "
+         "truly relevant articles."),
+        ("Section 6 — Test-Retest (Reproducibility)",
+         "Compares two independent runs of the same model on the same dataset, measuring exact agreement, "
+         "binarized agreement, and Cohen's Kappa with 95% CI to assess intra-model reproducibility."),
+        ("Section 7 — False Negatives",
+         "Lists articles included by the human reviewer but excluded by the AI, grouped by model and test. "
+         "These are the most critical errors in high-sensitivity screening."),
+        ("Section 8 — False Positives",
+         "Lists articles excluded by the human reviewer but included by the AI. "
+         "Shows the FP rate over human-excluded articles."),
+        ("Section 9 — General Comparative Table",
+         "A consolidated table presenting all key metrics (sensitivity, specificity, F1, Kappa, "
+         "fulltext capture, Listfinal capture, test-retest Kappa, cost) for every model × project × test."),
+        ("Section 10 — Cost-Effectiveness",
+         "Relates cost (USD) to mean sensitivity per model. Computes cost per sensitivity point "
+         "to identify models with the best cost-benefit ratio."),
+        ("Section 11 — Workload Reduction",
+         "Compares human screening time (time_human) against AI screening time (time_ia) "
+         "per execution and per project. Shows time saved, reduction percentage, and speed factor."),
+        ("Section 12 — Absolute Efficiency",
+         "Combines selectivity and capture into an efficiency score. "
+         "Efficiency Score = Listfinal Capture Rate × (1 − AI Positive Rate). "
+         "A higher score means the AI retains relevant articles while reducing overall screening volume."),
+        ("Appendix A — TIAB False Positives",
+         "Detailed per-article list with title, abstract, and which models flagged each article as a false positive."),
+        ("Appendix B — Fulltext Missed Articles",
+         "Per-article matrix showing which models missed each fulltext-selected article, "
+         "with detailed title and abstract information."),
+    ]
+    for title, desc in section_guide:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after = Pt(2)
+        run = p.add_run(f"{title}: ")
+        run.bold = True
+        run.font.size = Pt(9)
+        run.font.name = "Times New Roman"
+        run = p.add_run(desc)
+        run.font.size = Pt(9)
+        run.font.name = "Times New Roman"
+
+    # --- Methodology details ---
+    doc.add_paragraph()
+    meth_title = doc.add_paragraph()
+    run = meth_title.add_run("Key Methodological Definitions")
+    run.bold = True
+    run.font.size = Pt(10)
+    run.font.name = "Times New Roman"
+
+    method_notes = [
+        ("Binarization", "AI decisions (include, maybe, exclude) are binarized for "
+         "diagnostic analysis: include and maybe → positive (passes screening), exclude → negative. "
+         "This reflects high-sensitivity screening where uncertain articles should not be discarded."),
+        ("Gold Standard Hierarchy", "Three reference levels are used: (1) Human TIAB decisions — "
+         "the primary comparison for diagnostic metrics; (2) Fulltext selection — articles that "
+         "passed initial screening; (3) Listfinal — articles ultimately included after full-text "
+         "reading. The Listfinal capture rate (Section 5) is the definitive performance measure."),
+        ("Cohen's Kappa", "Interpretation follows Landis & Koch (1977): < 0 Poor; "
+         "0.00–0.20 Slight; 0.21–0.40 Fair; 0.41–0.60 Moderate; "
+         "0.61–0.80 Substantial; 0.81–1.00 Almost Perfect."),
+        ("Workload Reduction", "Human screening time (time_human) is compared with AI screening "
+         "time (time_ia). Speed factor = human time / AI time. "
+         "Reduction shows the percentage of time saved by using AI."),
+        ("Absolute Efficiency", "Efficiency Score = LF Capture Rate × (1 − AI Positive Rate). "
+         "A higher score means the AI retains all relevant articles while selecting fewer overall. "
+         "AI Positives are articles the AI marked as include/maybe at the TIAB stage."),
+        ("Cost-Effectiveness", "Cost per sensitivity point = average cost / (sensitivity × 100). "
+         "Lower is better. Allows comparison of models with different pricing."),
+    ]
+    for title, text in method_notes:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after = Pt(2)
+        run = p.add_run(f"{title}: ")
+        run.bold = True
+        run.font.size = Pt(9)
+        run.font.name = "Times New Roman"
+        run = p.add_run(text)
+        run.font.size = Pt(9)
+        run.font.name = "Times New Roman"
+
+    doc.add_page_break()
+
+    # ==================================================================
     #  SECAO 1 — VALIDACAO DOS DADOS
     # ==================================================================
     add_heading(doc, "1. Data Validation", level=1)
@@ -668,12 +867,21 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         n_ai_files = sum(len(m["tests"]) for m in proj["models"].values())
         has_tiab = "Yes" if proj["human_tiab"] else "No"
         has_ft = "Yes" if proj["human_fulltext"] else "No"
+        has_lf = "Yes" if proj.get("human_listfinal") else "No"
+        lf_n = ""
+        if proj.get("human_listfinal"):
+            try:
+                lf_df = load_file(str(proj["human_listfinal"]))
+                lf_n = str(len(lf_df))
+            except Exception:
+                lf_n = "?"
         inventory_rows.append([
-            proj["name"], str(n_models), str(n_ai_files), has_tiab, has_ft
+            proj["name"], str(n_models), str(n_ai_files), has_tiab, has_ft, has_lf, lf_n
         ])
 
-    inv_headers = ["Project", "Models", "AI Files", "Human TIAB", "Human Fulltext"]
-    tbl = doc.add_table(rows=1 + len(inventory_rows), cols=5)
+    inv_headers = ["Project", "Models", "AI Files", "Human TIAB", "Human Fulltext",
+                   "Listfinal", "Listfinal N"]
+    tbl = doc.add_table(rows=1 + len(inventory_rows), cols=7)
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
     add_borders(tbl)
     header_row(tbl, inv_headers)
@@ -685,6 +893,8 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             if j == 3 and val == "No":
                 shade(tbl.cell(i + 1, j), "FFD6D6")
             if j == 4 and val == "No":
+                shade(tbl.cell(i + 1, j), "FFF3CD")
+            if j == 5 and val == "No":
                 shade(tbl.cell(i + 1, j), "FFF3CD")
 
     doc.add_paragraph()
@@ -718,15 +928,15 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         meta_rows = []
         for _, row in metadados.iterrows():
             meta_rows.append([
-                str(row.get("Projeto", "")),
-                str(row.get("código", "")),
-                str(row.get("modelo", "")),
-                str(row.get("Parâmetros", "")),
-                str(row.get("versão", "")),
-                str(row.get("tempo", "")),
+                str(row.get("project", "")),
+                str(row.get("code", "")),
+                str(row.get("model", "")),
+                str(row.get("parameter", "")),
+                str(row.get("version", "")),
+                str(row.get("time_ia", "")),
                 str(int(row["tokens input"])) if pd.notna(row.get("tokens input")) else "-",
-                str(int(row["tokens output"])) if pd.notna(row.get("tokens output")) else "-",
-                f"{row['total']:.2f}" if pd.notna(row.get("total")) else "-",
+                str(int(row["tokens_output"])) if pd.notna(row.get("tokens_output")) else "-",
+                f"{row['cost_total']:.2f}" if pd.notna(row.get("cost_total")) else "-",
             ])
 
         tbl = doc.add_table(rows=1 + len(meta_rows), cols=len(meta_cols))
@@ -744,12 +954,14 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         tn = next_table()
         add_heading(doc, f"Table {tn}. Cost Summary by Project", level=2)
 
-        cost_summary = metadados.groupby("Projeto").agg(
-            n_execucoes=("total", "count"),
-            custo_total=("total", "sum"),
-            custo_medio=("total", "mean"),
+        # Filter out empty rows (NaN project)
+        meta_valid = metadados.dropna(subset=["project"])
+        cost_summary = meta_valid.groupby("project").agg(
+            n_execucoes=("cost_total", "count"),
+            custo_total=("cost_total", "sum"),
+            custo_medio=("cost_total", "mean"),
             tokens_in_total=("tokens input", "sum"),
-            tokens_out_total=("tokens output", "sum"),
+            tokens_out_total=("tokens_output", "sum"),
         ).reset_index()
 
         cost_headers = ["Project", "Executions", "Total Cost ($)", "Avg Cost ($)",
@@ -760,7 +972,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         header_row(tbl, cost_headers)
         for i, (_, row) in enumerate(cost_summary.iterrows()):
             vals = [
-                str(row["Projeto"]),
+                str(row["project"]),
                 str(int(row["n_execucoes"])),
                 f"{row['custo_total']:.2f}",
                 f"{row['custo_medio']:.2f}",
@@ -777,12 +989,12 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         tn = next_table()
         add_heading(doc, f"Table {tn}. Average Cost per Model", level=2)
 
-        cost_model = metadados.copy()
-        cost_model["modelo_norm"] = cost_model["modelo"].apply(normalise_model_name)
-        cost_by_model = cost_model.groupby("modelo").agg(
-            n=("total", "count"),
-            custo_medio=("total", "mean"),
-            custo_total=("total", "sum"),
+        cost_model = metadados.dropna(subset=["project"]).copy()
+        cost_model["model_norm"] = cost_model["model"].apply(normalise_model_name)
+        cost_by_model = cost_model.groupby("model").agg(
+            n=("cost_total", "count"),
+            custo_medio=("cost_total", "mean"),
+            custo_total=("cost_total", "sum"),
         ).reset_index().sort_values("custo_medio")
 
         cmod_headers = ["Model", "Executions", "Avg Cost ($)", "Total Cost ($)"]
@@ -791,7 +1003,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         add_borders(tbl)
         header_row(tbl, cmod_headers)
         for i, (_, row) in enumerate(cost_by_model.iterrows()):
-            vals = [str(row["modelo"]), str(int(row["n"])),
+            vals = [str(row["model"]), str(int(row["n"])),
                     f"{row['custo_medio']:.2f}", f"{row['custo_total']:.2f}"]
             for j, v in enumerate(vals):
                 align = WD_ALIGN_PARAGRAPH.LEFT if j == 0 else WD_ALIGN_PARAGRAPH.CENTER
@@ -980,61 +1192,97 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
 
             doc.add_paragraph()
 
-            # ---- Per-round missed articles detail ----
-            # Collect all unique missed titles and build a matrix of model+test vs title
+            # Note: detailed per-article missed table moved to Appendix
             all_missed = set()
-            run_keys = []  # list of (model_norm, test_num, display_label)
             for mn in sorted(proj_ft.keys()):
-                model_name = proj["models"][mn]["name"]
                 for test_num in sorted(proj_ft[mn].keys()):
                     r = proj_ft[mn][test_num]
-                    label = f"{model_name} {test_num}º"
-                    run_keys.append((mn, test_num, label))
                     for t in r.get("missed_titles", []):
                         all_missed.add(t)
-
             if all_missed:
-                tn_num = next_table()
-                add_heading(doc, f"Table {tn_num}. Fulltext Articles Missed by AI — {proj['name']}", level=3)
-                add_note(doc, "Articles included in the final review that were excluded by the AI. "
-                         "Each column shows a model/test run: ✗ = missed, ✓ = captured.")
+                p = doc.add_paragraph(
+                    f"Note: {len(all_missed)} unique article(s) were missed by at least one AI run. "
+                    "See Appendix (Fulltext Missed Articles) for detailed per-article and per-model information."
+                )
+                p.runs[0].font.size = Pt(9)
+                p.runs[0].font.italic = True
 
-                # Build header: #, Article Title, then one column per model+test
-                miss_headers = ["#", "Article Title"] + [rk[2] for rk in run_keys]
-                n_cols = len(miss_headers)
-
-                miss_tbl = doc.add_table(rows=1, cols=n_cols)
-                miss_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-                add_borders(miss_tbl)
-                header_row(miss_tbl, miss_headers)
-
-                for idx, title in enumerate(sorted(all_missed), 1):
-                    row = miss_tbl.add_row()
-                    set_cell(row.cells[0], str(idx), font_size=Pt(7))
-                    set_cell(row.cells[1], str(title)[:150], font_size=Pt(7),
-                             align=WD_ALIGN_PARAGRAPH.LEFT)
-
-                    # Check each model+test run
-                    for col_idx, (mn, test_num, _label) in enumerate(run_keys, start=2):
-                        r = proj_ft[mn][test_num]
-                        missed_in_run = r.get("missed_titles", [])
-                        if title in missed_in_run:
-                            set_cell(row.cells[col_idx], "✗", font_size=Pt(7),
-                                     color=RGBColor(200, 0, 0))
-                            shade(row.cells[col_idx], "FFD6D6")
-                        else:
-                            set_cell(row.cells[col_idx], "✓", font_size=Pt(7),
-                                     color=RGBColor(0, 128, 0))
-                            shade(row.cells[col_idx], "D5F5E3")
-
-                doc.add_paragraph()
+            doc.add_paragraph()
 
     doc.add_page_break()
 
     # ==================================================================
-    #  SECTION 5 — TEST-RETEST
+    #  SECTION 5 — LISTFINAL VERIFICATION (TRUE GOLD STANDARD)
     # ==================================================================
     section_num = 5
+    add_heading(doc, f"{section_num}. Listfinal Verification (True Gold Standard Capture Rate)", level=1)
+    add_note(doc, "Checks whether articles in the final included list (Listfinal — post full-text reading) "
+             "would have been retained by the AI during TIAB screening. "
+             "This is the definitive measure of AI screening performance: "
+             "the proportion of truly relevant articles that the AI would not have missed.")
+
+    lf_results = all_results.get("listfinal", {})
+    if not lf_results:
+        p = doc.add_paragraph("No project with Listfinal data available.")
+        p.runs[0].font.italic = True
+    else:
+        # ---- Summary table across all projects ----
+        tn_num = next_table()
+        add_heading(doc, f"Table {tn_num}. Listfinal Capture Rate — All Projects", level=2)
+        add_note(doc, "How many of the final included articles would have been retained by each AI model at TIAB screening.")
+
+        lf_headers = ["Project", "Model", "Test", "Listfinal N", "Found",
+                       "Captured", "Missed", "Capture Rate", "Miss Rate"]
+        lf_rows = []
+        for pn in sorted(lf_results.keys()):
+            proj = projects[pn]
+            for mn in sorted(lf_results[pn].keys()):
+                model_name = proj["models"][mn]["name"]
+                for test_num in sorted(lf_results[pn][mn].keys()):
+                    r = lf_results[pn][mn][test_num]
+                    lf_rows.append([
+                        proj["name"], model_name, f"{test_num}o",
+                        str(r["n_listfinal"]), str(r["n_found"]),
+                        str(r["n_captured"]), str(r["n_missed"]),
+                        fmt_pct(r["capture_rate"]), fmt_pct(r["miss_rate"]),
+                    ])
+
+        tbl = doc.add_table(rows=1 + len(lf_rows), cols=len(lf_headers))
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        add_borders(tbl)
+        header_row(tbl, lf_headers)
+        for i, row_data in enumerate(lf_rows):
+            for j, val in enumerate(row_data):
+                align = WD_ALIGN_PARAGRAPH.LEFT if j <= 2 else WD_ALIGN_PARAGRAPH.CENTER
+                set_cell(tbl.cell(i + 1, j), val, font_size=Pt(8), align=align)
+                # Highlight capture rate
+                if j == 7 and val not in ("-", "N/A"):
+                    try:
+                        pct_val = float(val.replace("%", ""))
+                        if pct_val >= 95:
+                            shade(tbl.cell(i + 1, j), "D5F5E3")
+                        elif pct_val < 80:
+                            shade(tbl.cell(i + 1, j), "FFD6D6")
+                    except ValueError:
+                        pass
+                # Highlight missed > 0
+                if j == 6:
+                    try:
+                        if int(val) > 0:
+                            shade(tbl.cell(i + 1, j), "FFF3CD")
+                        else:
+                            shade(tbl.cell(i + 1, j), "D5F5E3")
+                    except ValueError:
+                        pass
+
+        doc.add_paragraph()
+
+    doc.add_page_break()
+
+    # ==================================================================
+    #  SECTION 6 — TEST-RETEST
+    # ==================================================================
+    section_num = 6
     add_heading(doc, f"{section_num}. Test-Retest (Reproducibility)", level=1)
     add_note(doc, "Compares two runs of the same model on the same dataset. "
              "Evaluates the consistency/reproducibility of AI decisions.")
@@ -1123,7 +1371,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     # ==================================================================
     #  SECTION 6 — FALSE NEGATIVES (missed articles vs human)
     # ==================================================================
-    section_num = 6
+    section_num = 7
     add_heading(doc, f"{section_num}. False Negatives Analysis", level=1)
     add_note(doc, "Articles included by the human (maybe) but excluded by the AI (exclude). "
              "False negatives are the most critical in systematic review screening.")
@@ -1175,7 +1423,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     # ==================================================================
     #  SECTION 7 — FALSE POSITIVES
     # ==================================================================
-    section_num = 7
+    section_num = 8
     add_heading(doc, f"{section_num}. False Positives Analysis", level=1)
     add_note(doc, "Articles excluded by the human (exclude) but included by the AI (maybe). "
              "These impact the review workload.")
@@ -1224,12 +1472,13 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     # ==================================================================
     #  SECTION 8 — GENERAL COMPARATIVE TABLE
     # ==================================================================
-    section_num = 8
+    section_num = 9
     add_heading(doc, f"{section_num}. General Comparative Table", level=1)
     add_note(doc, "Consolidated view of all metrics by project × model × test.")
 
     diag = all_results.get("diagnostic", {})
     ft = all_results.get("fulltext", {})
+    lf = all_results.get("listfinal", {})
     tr = all_results.get("test_retest", {})
 
     # Montar tabela giga
@@ -1237,7 +1486,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     add_heading(doc, f"Table {tn_num}. General Comparison — Diagnostic Performance and Reproducibility", level=2)
 
     big_headers = ["Project", "Model", "Test", "Sens.", "Spec.", "F1",
-                   "Kappa (diag)", "FT Capture", "Kappa (T-R)", "Cost ($)"]
+                   "Kappa (diag)", "FT Capture", "LF Capture", "Kappa (T-R)", "Cost ($)"]
     big_rows = []
 
     for pn in sorted(projects.keys()):
@@ -1246,7 +1495,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             model_info = proj["models"][mn]
             model_name = model_info["name"]
             for test_num in sorted(model_info["tests"].keys()):
-                row_vals = [proj["name"], model_name, f"{test_num}º"]
+                row_vals = [proj["name"], model_name, f"{test_num}o"]
 
                 # Diagnostica
                 d = diag.get(pn, {}).get(mn, {}).get(test_num)
@@ -1265,6 +1514,13 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                 else:
                     row_vals.append("-")
 
+                # Listfinal
+                lf_res = lf.get(pn, {}).get(mn, {}).get(test_num)
+                if lf_res:
+                    row_vals.append(fmt_pct(lf_res["capture_rate"]))
+                else:
+                    row_vals.append("-")
+
                 # Test-retest (only for 1st test, since it's per pair)
                 tr_res = tr.get(pn, {}).get(mn)
                 if tr_res and test_num == 1:
@@ -1278,9 +1534,9 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                 code = model_info["tests"][test_num]["code"]
                 cost_val = "-"
                 if metadados is not None:
-                    meta_match = metadados[metadados["código"].astype(str) == str(code)]
+                    meta_match = metadados[metadados["code"].astype(str) == str(code)]
                     if not meta_match.empty:
-                        cost_val = f"{meta_match.iloc[0]['total']:.2f}"
+                        cost_val = f"{meta_match.iloc[0]['cost_total']:.2f}"
                 row_vals.append(cost_val)
 
                 big_rows.append(row_vals)
@@ -1300,7 +1556,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     #  SECTION 9 — COST-EFFECTIVENESS ANALYSIS
     # ==================================================================
     if metadados is not None and diag:
-        section_num = 9
+        section_num = 10
         add_heading(doc, f"{section_num}. Cost-Effectiveness Analysis", level=1)
         add_note(doc, "Relationship between cost (USD) and diagnostic performance. "
                  "Evaluates the best balance between cost and screening quality.")
@@ -1335,9 +1591,9 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                         f1_vals.append(f1v)
                     code = proj["models"][mn]["tests"][tn2]["code"]
                     if metadados is not None:
-                        meta_m = metadados[metadados["código"].astype(str) == str(code)]
-                        if not meta_m.empty and pd.notna(meta_m.iloc[0]["total"]):
-                            cost_vals.append(meta_m.iloc[0]["total"])
+                        meta_m = metadados[metadados["code"].astype(str) == str(code)]
+                        if not meta_m.empty and pd.notna(meta_m.iloc[0]["cost_total"]):
+                            cost_vals.append(meta_m.iloc[0]["cost_total"])
 
                 avg_sens = np.mean(sens_vals) if sens_vals else float("nan")
                 avg_spec = np.mean(spec_vals) if spec_vals else float("nan")
@@ -1369,37 +1625,231 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         doc.add_paragraph()
 
     # ==================================================================
-    #  FINAL SECTION — METHODOLOGICAL NOTES
+    #  SECTION 11 — WORKLOAD REDUCTION ANALYSIS
     # ==================================================================
-    doc.add_page_break()
-    add_heading(doc, "Methodological Notes", level=1)
+    if metadados is not None:
+        section_num = 11
+        add_heading(doc, f"{section_num}. Workload Reduction Analysis", level=1)
+        add_note(doc, "Compares human screening time (time_human) with AI screening time (time_ia). "
+                 "Quantifies the time savings achieved by using AI-assisted screening.")
 
-    notes = [
-        ("Binarization", "AI decisions (include, maybe, exclude) were binarized for "
-         "diagnostic analysis: include and maybe → positive (passes screening), exclude → negative."),
-        ("Gold Standard", "The true gold standard is the fulltext capture rate (Section 4): "
-         "whether articles ultimately selected by human reviewers after full-text reading "
-         "were retained by the AI at the TIAB screening stage. "
-         "The human TIAB decision is an intermediate reference used to compute diagnostic agreement metrics."),
-        ("Cohen's Kappa", "Interpretation according to Landis & Koch (1977): < 0 Poor; "
-         "0.00–0.20 Slight; 0.21–0.40 Fair; 0.41–0.60 Moderate; "
-         "0.61–0.80 Substantial; 0.81–1.00 Almost Perfect."),
-        ("Test-Retest", "Compares two independent runs of the same model on the same "
-         "dataset. Kappa measures intra-model reproducibility."),
-        ("Fulltext", "The capture rate assesses whether articles included in the final review "
-         "(after full-text reading) would have been retained by the AI during TIAB screening."),
-        ("Cost-Effectiveness", "Cost per sensitivity point = average cost / (sensitivity × 100). "
-         "A lower value indicates a better cost-benefit ratio."),
-    ]
-    for title, text in notes:
-        p = doc.add_paragraph()
-        run = p.add_run(f"{title}: ")
-        run.bold = True
-        run.font.size = Pt(9)
-        run.font.name = "Times New Roman"
-        run = p.add_run(text)
-        run.font.size = Pt(9)
-        run.font.name = "Times New Roman"
+        # Parse timedelta columns
+        def parse_td(val):
+            """Convert a timedelta or string representation to total hours."""
+            if pd.isna(val):
+                return float("nan")
+            if isinstance(val, pd.Timedelta):
+                return val.total_seconds() / 3600.0
+            s = str(val).strip()
+            if not s:
+                return float("nan")
+            # Handle "X days HH:MM:SS" format
+            try:
+                td = pd.to_timedelta(s)
+                return td.total_seconds() / 3600.0
+            except Exception:
+                return float("nan")
+
+        def fmt_hours(h):
+            """Format hours as 'Xh Ym'."""
+            if np.isnan(h):
+                return "-"
+            hr = int(h)
+            mn = int((h - hr) * 60)
+            if hr > 0:
+                return f"{hr}h {mn:02d}m"
+            return f"{mn}m"
+
+        meta_work = metadados.copy()
+        meta_work["_h_human"] = meta_work["time_human"].apply(parse_td)
+        meta_work["_h_ia"] = meta_work["time_ia"].apply(parse_td)
+
+        tn_num = next_table()
+        add_heading(doc, f"Table {tn_num}. Workload Reduction — Per Execution", level=2)
+
+        wr_headers = ["Project", "Model", "Code", "Human Time", "AI Time",
+                      "Time Saved", "Reduction (%)", "Speed Factor"]
+        wr_rows = []
+        for _, row in meta_work.iterrows():
+            h_human = row["_h_human"]
+            h_ia = row["_h_ia"]
+            saved = h_human - h_ia if not (np.isnan(h_human) or np.isnan(h_ia)) else float("nan")
+            reduction = (saved / h_human * 100) if (not np.isnan(saved) and h_human > 0) else float("nan")
+            factor = (h_human / h_ia) if (not np.isnan(h_human) and not np.isnan(h_ia) and h_ia > 0) else float("nan")
+            wr_rows.append([
+                str(row.get("project", "")),
+                str(row.get("model", "")),
+                str(row.get("code", "")),
+                fmt_hours(h_human),
+                fmt_hours(h_ia),
+                fmt_hours(saved),
+                f"{reduction:.1f}%" if not np.isnan(reduction) else "-",
+                f"{factor:.0f}x" if not np.isnan(factor) else "-",
+            ])
+
+        tbl = doc.add_table(rows=1 + len(wr_rows), cols=len(wr_headers))
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        add_borders(tbl)
+        header_row(tbl, wr_headers)
+        for i, row_data in enumerate(wr_rows):
+            for j, val in enumerate(row_data):
+                align = WD_ALIGN_PARAGRAPH.LEFT if j <= 2 else WD_ALIGN_PARAGRAPH.CENTER
+                set_cell(tbl.cell(i + 1, j), val, font_size=Pt(8), align=align)
+                # Highlight reduction
+                if j == 6 and val not in ("-", "N/A"):
+                    try:
+                        pct_val = float(val.replace("%", ""))
+                        if pct_val >= 90:
+                            shade(tbl.cell(i + 1, j), "D5F5E3")
+                        elif pct_val >= 50:
+                            shade(tbl.cell(i + 1, j), "E8F5E9")
+                    except ValueError:
+                        pass
+
+        doc.add_paragraph()
+
+        # Summary by project
+        tn_num = next_table()
+        add_heading(doc, f"Table {tn_num}. Workload Reduction Summary by Project", level=2)
+
+        wr_proj = meta_work.groupby("project").agg(
+            human_hours=("_h_human", "first"),   # same human time per project
+            avg_ia_hours=("_h_ia", "mean"),
+            min_ia_hours=("_h_ia", "min"),
+            max_ia_hours=("_h_ia", "max"),
+            n_runs=("_h_ia", "count"),
+        ).reset_index()
+
+        wp_headers = ["Project", "Human Time", "Avg AI Time", "Fastest AI",
+                      "Avg Reduction (%)", "Avg Speed Factor"]
+        tbl = doc.add_table(rows=1 + len(wr_proj), cols=len(wp_headers))
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        add_borders(tbl)
+        header_row(tbl, wp_headers)
+        for i, (_, row) in enumerate(wr_proj.iterrows()):
+            h_h = row["human_hours"]
+            avg_ia = row["avg_ia_hours"]
+            fast = row["min_ia_hours"]
+            avg_red = ((h_h - avg_ia) / h_h * 100) if (not np.isnan(h_h) and not np.isnan(avg_ia) and h_h > 0) else float("nan")
+            avg_fac = (h_h / avg_ia) if (not np.isnan(h_h) and not np.isnan(avg_ia) and avg_ia > 0) else float("nan")
+            vals = [
+                str(row["project"]),
+                fmt_hours(h_h),
+                fmt_hours(avg_ia),
+                fmt_hours(fast),
+                f"{avg_red:.1f}%" if not np.isnan(avg_red) else "-",
+                f"{avg_fac:.0f}x" if not np.isnan(avg_fac) else "-",
+            ]
+            for j, v in enumerate(vals):
+                align = WD_ALIGN_PARAGRAPH.LEFT if j == 0 else WD_ALIGN_PARAGRAPH.CENTER
+                set_cell(tbl.cell(i + 1, j), v, font_size=Pt(8), align=align)
+
+        doc.add_paragraph()
+
+    # ==================================================================
+    #  SECTION 12 — ABSOLUTE EFFICIENCY ANALYSIS
+    # ==================================================================
+    diag_abs = all_results.get("diagnostic", {})
+    lf_abs = all_results.get("listfinal", {})
+    if diag_abs and lf_abs:
+        section_num = 12
+        add_heading(doc, f"{section_num}. Absolute Efficiency Analysis (TIAB Reduction vs Listfinal Retention)", level=1)
+        add_note(doc, "Measures how much the AI reduces the TIAB workload (fewer articles selected for further review) "
+                 "while still retaining the truly relevant articles (Listfinal capture). "
+                 "An efficient model selects fewer TIAB articles as positive while maintaining near-perfect Listfinal capture.")
+
+        tn_num = next_table()
+        add_heading(doc, f"Table {tn_num}. Absolute Efficiency — TIAB Selection Volume vs Listfinal Retention", level=2)
+
+        eff_headers = ["Project", "Model", "Test", "TIAB N",
+                       "AI Positives", "AI Pos. (%)", "Human Positives", "Human Pos. (%)",
+                       "Reduction", "LF Capture", "Efficiency Score"]
+        eff_rows = []
+
+        for pn in sorted(projects.keys()):
+            proj = projects[pn]
+            proj_diag = diag_abs.get(pn, {})
+            proj_lf = lf_abs.get(pn, {})
+
+            for mn in sorted(proj["models"].keys()):
+                model_info = proj["models"][mn]
+                model_name = model_info["name"]
+                for test_num in sorted(model_info["tests"].keys()):
+                    d = proj_diag.get(mn, {}).get(test_num)
+                    l = proj_lf.get(mn, {}).get(test_num)
+                    if not d:
+                        continue
+
+                    n_total = d["n_paired"]
+                    ai_pos = d["tp"] + d["fp"]   # AI selected as positive (maybe)
+                    hu_pos = d["tp"] + d["fn"]   # Human selected as positive
+                    ai_pct = ai_pos / n_total * 100 if n_total > 0 else float("nan")
+                    hu_pct = hu_pos / n_total * 100 if n_total > 0 else float("nan")
+                    # Reduction = how many fewer articles AI selects vs human
+                    reduction = ((hu_pos - ai_pos) / hu_pos * 100) if hu_pos > 0 else float("nan")
+
+                    lf_cap = "-"
+                    eff_score = "-"
+                    if l:
+                        cap_rate = l["capture_rate"]
+                        lf_cap = fmt_pct(cap_rate)
+                        # Efficiency score = Listfinal capture rate * (1 - AI positive rate)
+                        # Higher = better (captures everything while selecting less)
+                        if not np.isnan(cap_rate) and not np.isnan(ai_pct):
+                            score = cap_rate * (1 - ai_pct / 100)
+                            eff_score = fmt(score, 3)
+
+                    eff_rows.append([
+                        proj["name"], model_name, f"{test_num}o",
+                        str(n_total),
+                        str(ai_pos), f"{ai_pct:.1f}%" if not np.isnan(ai_pct) else "-",
+                        str(hu_pos), f"{hu_pct:.1f}%" if not np.isnan(hu_pct) else "-",
+                        f"{reduction:+.1f}%" if not np.isnan(reduction) else "-",
+                        lf_cap, eff_score,
+                    ])
+
+        if eff_rows:
+            tbl = doc.add_table(rows=1 + len(eff_rows), cols=len(eff_headers))
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            add_borders(tbl)
+            header_row(tbl, eff_headers)
+            for i, row_data in enumerate(eff_rows):
+                for j, val in enumerate(row_data):
+                    align = WD_ALIGN_PARAGRAPH.LEFT if j <= 2 else WD_ALIGN_PARAGRAPH.CENTER
+                    set_cell(tbl.cell(i + 1, j), val, font_size=Pt(7), align=align)
+                    # Highlight LF capture
+                    if j == 9 and val not in ("-", "N/A"):
+                        try:
+                            pct_val = float(val.replace("%", ""))
+                            if pct_val >= 95:
+                                shade(tbl.cell(i + 1, j), "D5F5E3")
+                            elif pct_val < 80:
+                                shade(tbl.cell(i + 1, j), "FFD6D6")
+                        except ValueError:
+                            pass
+                    # Highlight AI positive rate (lower = better)
+                    if j == 5 and val not in ("-", "N/A"):
+                        try:
+                            pct_val = float(val.replace("%", ""))
+                            if pct_val < 30:
+                                shade(tbl.cell(i + 1, j), "D5F5E3")
+                            elif pct_val > 70:
+                                shade(tbl.cell(i + 1, j), "FFF3CD")
+                        except ValueError:
+                            pass
+
+            doc.add_paragraph()
+
+            # Interpretation note
+            add_note(doc, "AI Positives = articles the AI selected for further review (include + maybe). "
+                     "Reduction = % fewer articles selected by AI vs human. Negative = AI selected more. "
+                     "Efficiency Score = LF Capture Rate × (1 − AI Positive Rate). "
+                     "Higher score = better (retains all relevant articles while selecting fewer overall).")
+        else:
+            p = doc.add_paragraph("Insufficient data for absolute efficiency analysis (requires both diagnostic and Listfinal data).")
+            p.runs[0].font.italic = True
+
+        doc.add_paragraph()
 
     # ==================================================================
     #  APPENDIX — TIAB FALSE POSITIVES: ARTICLES INCLUDED BY AI,
@@ -1408,7 +1858,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     doc.add_page_break()
     add_heading(doc, "Appendix. TIAB False Positives by Run", level=1)
     add_note(doc, "Articles included by the AI (maybe/include) but excluded by the human screener at the TIAB stage. "
-             "Each column represents a model/test run: ✗ = AI included (false positive), ✓ = AI excluded (correct).")
+             "Each entry shows the article title, abstract, and which model/test classified it as false positive.")
 
     fp_results = all_results.get("false_positives", {})
     has_fp_data = any(
@@ -1428,8 +1878,8 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             proj = projects[pn]
             proj_fp = fp_results[pn]
 
-            # Collect all unique FP titles for this project
-            all_fp = set()
+            # Collect all unique FP articles with abstracts; build run_keys
+            all_fp_dict = {}  # title -> {"title": ..., "abstract": ...}
             run_keys_fp = []
             for mn in sorted(proj_fp.keys()):
                 model_name = proj["models"][mn]["name"]
@@ -1437,54 +1887,83 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                     r = proj_fp[mn][test_num]
                     label = f"{model_name} {test_num}º"
                     run_keys_fp.append((mn, test_num, label))
+                    for art in r.get("fp_articles", []):
+                        t = art.get("title", "")
+                        if t and t not in all_fp_dict:
+                            all_fp_dict[t] = art
+                    # Fallback: if fp_articles not available, use fp_titles
                     for t in r.get("fp_titles", []):
-                        all_fp.add(t)
+                        if t and t not in all_fp_dict:
+                            all_fp_dict[t] = {"title": t, "abstract": ""}
 
-            if not all_fp:
+            if not all_fp_dict:
                 continue
 
             add_heading(doc, f"Project: {proj['name']}", level=2)
-            add_note(doc, f"{len(all_fp)} unique article(s) classified as false positive in at least one run.")
+            add_note(doc, f"{len(all_fp_dict)} unique article(s) classified as false positive in at least one run.")
 
-            tn_num = next_table()
-            add_heading(doc, f"Table {tn_num}. TIAB False Positives — {proj['name']}", level=3)
+            for idx, title in enumerate(sorted(all_fp_dict.keys()), 1):
+                art = all_fp_dict[title]
+                abstract_text = art.get("abstract", "") or ""
+                if pd.isna(abstract_text):
+                    abstract_text = ""
 
-            fp_app_headers = ["#", "Article Title"] + [rk[2] for rk in run_keys_fp]
-            n_cols_fp = len(fp_app_headers)
-
-            fp_app_tbl = doc.add_table(rows=1, cols=n_cols_fp)
-            fp_app_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-            add_borders(fp_app_tbl)
-            header_row(fp_app_tbl, fp_app_headers)
-
-            for idx, title in enumerate(sorted(all_fp), 1):
-                row = fp_app_tbl.add_row()
-                set_cell(row.cells[0], str(idx), font_size=Pt(7))
-                set_cell(row.cells[1], str(title)[:150], font_size=Pt(7),
-                         align=WD_ALIGN_PARAGRAPH.LEFT)
-
-                for col_idx, (mn, test_num, _label) in enumerate(run_keys_fp, start=2):
+                # Determine which models flagged this as FP
+                fp_models = []
+                for mn, test_num, label in run_keys_fp:
                     r = proj_fp[mn][test_num]
                     fp_in_run = r.get("fp_titles", [])
                     if title in fp_in_run:
-                        set_cell(row.cells[col_idx], "✗", font_size=Pt(7),
-                                 color=RGBColor(200, 0, 0))
-                        shade(row.cells[col_idx], "FFD6D6")
-                    else:
-                        set_cell(row.cells[col_idx], "✓", font_size=Pt(7),
-                                 color=RGBColor(0, 128, 0))
-                        shade(row.cells[col_idx], "D5F5E3")
+                        fp_models.append(label)
+
+                # Numbered title
+                p_title = doc.add_paragraph()
+                p_title.paragraph_format.space_before = Pt(6)
+                p_title.paragraph_format.space_after = Pt(2)
+                run_num = p_title.add_run(f"{idx}. ")
+                run_num.bold = True
+                run_num.font.size = Pt(9)
+                run_num.font.name = "Times New Roman"
+                run_t = p_title.add_run(str(title))
+                run_t.bold = True
+                run_t.font.size = Pt(9)
+                run_t.font.name = "Times New Roman"
+
+                # Models that flagged as FP
+                p_models = doc.add_paragraph()
+                p_models.paragraph_format.left_indent = Pt(18)
+                p_models.paragraph_format.space_before = Pt(0)
+                p_models.paragraph_format.space_after = Pt(2)
+                run_lbl = p_models.add_run("False positive in: ")
+                run_lbl.bold = True
+                run_lbl.font.size = Pt(8)
+                run_lbl.font.name = "Times New Roman"
+                run_lbl.font.color.rgb = RGBColor(200, 0, 0)
+                run_mlist = p_models.add_run(", ".join(fp_models) if fp_models else "—")
+                run_mlist.font.size = Pt(8)
+                run_mlist.font.name = "Times New Roman"
+
+                # Abstract
+                if abstract_text.strip():
+                    p_abs = doc.add_paragraph()
+                    p_abs.paragraph_format.left_indent = Pt(18)
+                    p_abs.paragraph_format.space_after = Pt(6)
+                    run_ab = p_abs.add_run(str(abstract_text))
+                    run_ab.italic = True
+                    run_ab.font.size = Pt(8)
+                    run_ab.font.name = "Times New Roman"
 
             doc.add_paragraph()
 
     # ==================================================================
-    #  APPENDIX — FULLTEXT MISSED ARTICLES: TITLE AND ABSTRACT
+    #  APPENDIX — FULLTEXT MISSED ARTICLES: TITLE, ABSTRACT, AND
+    #             WHICH AI MODELS MISSED THEM
     # ==================================================================
     doc.add_page_break()
-    add_heading(doc, "Appendix. Fulltext Missed Articles (Title and Abstract)", level=1)
+    add_heading(doc, "Appendix. Fulltext Missed Articles (Title, Abstract, and Model)", level=1)
     add_note(doc, "Articles included in the human fulltext review but excluded by the AI in at least "
-             "one run. Titles and abstracts are shown to facilitate evaluation of possible reasons "
-             "for improper exclusion.")
+             "one run. For each article: title, abstract, and which model/test runs missed it "
+             "(✗ = missed, ✓ = captured).")
 
     ft_app_data = all_results.get("fulltext", {})
     has_missed_abs = any(
@@ -1502,6 +1981,14 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         for pn in sorted(ft_app_data.keys()):
             proj = projects[pn]
             proj_ft_app = ft_app_data[pn]
+
+            # Build run_keys for this project
+            run_keys_miss = []
+            for mn in sorted(proj_ft_app.keys()):
+                model_name = proj["models"][mn]["name"]
+                for test_num in sorted(proj_ft_app[mn].keys()):
+                    label = f"{model_name} {test_num}º"
+                    run_keys_miss.append((mn, test_num, label))
 
             # Collect all unique missed articles across all runs (deduplicate by title)
             seen_titles_app = set()
@@ -1521,9 +2008,60 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             add_heading(doc, f"Project: {proj['name']}", level=2)
             add_note(doc, f"{len(unique_missed_app)} unique article(s) missed by the AI in at least one run.")
 
-            for idx, art in enumerate(unique_missed_app, 1):
+            # --- Summary matrix table: which models missed which articles ---
+            tn_num = next_table()
+            add_heading(doc, f"Table {tn_num}. Fulltext Articles Missed by AI — {proj['name']}", level=3)
+            add_note(doc, "Each column shows a model/test run: ✗ = missed, ✓ = captured.")
+
+            miss_headers = ["#", "Article Title"] + [rk[2] for rk in run_keys_miss]
+            n_cols = len(miss_headers)
+
+            miss_tbl = doc.add_table(rows=1, cols=n_cols)
+            miss_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            add_borders(miss_tbl)
+            header_row(miss_tbl, miss_headers)
+
+            sorted_missed = sorted(unique_missed_app, key=lambda a: a.get("title", ""))
+            for idx, art in enumerate(sorted_missed, 1):
+                title_app = art.get("title", "—") or "—"
+                row = miss_tbl.add_row()
+                set_cell(row.cells[0], str(idx), font_size=Pt(7))
+                set_cell(row.cells[1], str(title_app)[:150], font_size=Pt(7),
+                         align=WD_ALIGN_PARAGRAPH.LEFT)
+
+                for col_idx, (mn, test_num, _label) in enumerate(run_keys_miss, start=2):
+                    r = proj_ft_app[mn][test_num]
+                    missed_in_run = r.get("missed_titles", [])
+                    if title_app in missed_in_run:
+                        set_cell(row.cells[col_idx], "✗", font_size=Pt(7),
+                                 color=RGBColor(200, 0, 0))
+                        shade(row.cells[col_idx], "FFD6D6")
+                    else:
+                        set_cell(row.cells[col_idx], "✓", font_size=Pt(7),
+                                 color=RGBColor(0, 128, 0))
+                        shade(row.cells[col_idx], "D5F5E3")
+
+            doc.add_paragraph()
+
+            # --- Detailed articles with abstracts ---
+            add_heading(doc, f"Missed Articles Detail — {proj['name']}", level=3)
+
+            for idx, art in enumerate(sorted_missed, 1):
                 title_app = art.get("title", "—") or "—"
                 abstract_app = art.get("abstract", "—") or "—"
+                if pd.isna(abstract_app):
+                    abstract_app = "—"
+
+                # Determine which models missed this article
+                missed_by = []
+                captured_by = []
+                for mn, test_num, label in run_keys_miss:
+                    r = proj_ft_app[mn][test_num]
+                    missed_in_run = r.get("missed_titles", [])
+                    if title_app in missed_in_run:
+                        missed_by.append(label)
+                    else:
+                        captured_by.append(label)
 
                 # Numbered title
                 p_title = doc.add_paragraph()
@@ -1537,6 +2075,29 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                 run_t.bold = True
                 run_t.font.size = Pt(9)
                 run_t.font.name = "Times New Roman"
+
+                # Models that missed / captured
+                p_models = doc.add_paragraph()
+                p_models.paragraph_format.left_indent = Pt(18)
+                p_models.paragraph_format.space_before = Pt(0)
+                p_models.paragraph_format.space_after = Pt(2)
+                run_lbl = p_models.add_run("Missed by: ")
+                run_lbl.bold = True
+                run_lbl.font.size = Pt(8)
+                run_lbl.font.name = "Times New Roman"
+                run_lbl.font.color.rgb = RGBColor(200, 0, 0)
+                run_mlist = p_models.add_run(", ".join(missed_by) if missed_by else "—")
+                run_mlist.font.size = Pt(8)
+                run_mlist.font.name = "Times New Roman"
+                if captured_by:
+                    run_cap = p_models.add_run(f"  |  Captured by: ")
+                    run_cap.bold = True
+                    run_cap.font.size = Pt(8)
+                    run_cap.font.name = "Times New Roman"
+                    run_cap.font.color.rgb = RGBColor(0, 128, 0)
+                    run_clist = p_models.add_run(", ".join(captured_by))
+                    run_clist.font.size = Pt(8)
+                    run_clist.font.name = "Times New Roman"
 
                 # Abstract
                 p_abs = doc.add_paragraph()
@@ -1578,6 +2139,11 @@ def validate_data(projects, metadados):
                 f"Project '{proj['name']}': no human Fulltext file. "
                 "Fulltext verification will not be possible."
             )
+        if not proj.get("human_listfinal"):
+            issues.append(
+                f"Project '{proj['name']}': no Listfinal file. "
+                "Listfinal verification will not be possible."
+            )
 
         # Check if all models have test-retest pairs
         for mn, model in proj["models"].items():
@@ -1591,7 +2157,7 @@ def validate_data(projects, metadados):
 
     # Check correspondence with metadata
     if metadados is not None:
-        meta_codes = set(metadados["código"].astype(str).tolist())
+        meta_codes = set(metadados["code"].astype(str).tolist())
         ai_codes = set()
         for proj in projects.values():
             for model in proj["models"].values():
@@ -1618,9 +2184,9 @@ def validate_data(projects, metadados):
             for mn, model in proj["models"].items():
                 for tn2, test in model["tests"].items():
                     code = test["code"]
-                    meta_match = metadados[metadados["código"].astype(str) == str(code)]
+                    meta_match = metadados[metadados["code"].astype(str) == str(code)]
                     if not meta_match.empty:
-                        meta_model = meta_match.iloc[0]["modelo"]
+                        meta_model = meta_match.iloc[0]["model"]
                         file_model = model["name"]
                         meta_model_norm = normalise_model_name(str(meta_model))
                         file_model_norm = normalise_model_name(file_model)
@@ -1687,6 +2253,7 @@ def run_all_analyses(projects, metadados):
                         fp_results[pn][mn][test_num] = {
                             "fp": r["fp"], "tn": r["tn"], "n_paired": r["n_paired"],
                             "fp_titles": r.get("fp_titles", []),
+                            "fp_articles": r.get("fp_articles", []),
                         }
                         print(f"OK (Sens={fmt_pct(r['metrics']['Sensitivity'])}, "
                               f"Kappa={fmt(r['kappa'], 3)})")
@@ -1725,6 +2292,32 @@ def run_all_analyses(projects, metadados):
                     print(f"ERROR: {e}")
 
     all_results["fulltext"] = ft_results
+
+    # ---- Listfinal Check ----
+    print("\n  Running Listfinal verification...")
+    lf_results = {}
+
+    for pn in sorted(projects.keys()):
+        proj = projects[pn]
+        if not proj.get("human_listfinal"):
+            print(f"    {proj['name']}: no Listfinal file, skipping.")
+            continue
+
+        lf_results[pn] = {}
+        for mn in sorted(proj["models"].keys()):
+            model = proj["models"][mn]
+            lf_results[pn][mn] = {}
+            for test_num, test_info in sorted(model["tests"].items()):
+                print(f"    {proj['name']} / {model['name']} / test {test_num}...", end=" ")
+                try:
+                    r = run_listfinal_check(test_info["path"], proj["human_listfinal"])
+                    lf_results[pn][mn][test_num] = r
+                    print(f"OK (Capture={fmt_pct(r['capture_rate'])}, "
+                          f"Missed={r['n_missed']})")
+                except Exception as e:
+                    print(f"ERROR: {e}")
+
+    all_results["listfinal"] = lf_results
 
     # ---- Test-Retest ----
     print("\n  Running test-retest...")

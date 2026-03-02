@@ -2,9 +2,11 @@ __pycache__/
 .venv/
 
 *.bak
-*.txt
+*.pyc
 
-# Pastas de dados do teste diagnostico
+requirements.txt
+
+# Dados e saídas
 input/
 output/
-
+PDF/

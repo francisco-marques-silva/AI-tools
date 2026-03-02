@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
   addParamTooltips();
 
   initCriteriaLists();
+  initAdvancedSettings();
 });
 
 const debounce = (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
@@ -59,12 +60,90 @@ const savePref = debounce((id, value) => localStorage.setItem(id, value), 200);
   "apiKey",
   "verbosity","reasoningEffort",
   "temperature",
+  "tierSelect",
+  "adv_concurrent","adv_concurrent_max","adv_concurrent_min",
+  "adv_record_retries","adv_aiup_after","adv_max_retries","adv_base_backoff",
 ].forEach((id) => {
   const el = document.getElementById(id);
   if (!el) return;
   const evt = el.tagName === "SELECT" ? "change" : "input";
   el.addEventListener(evt, () => savePref(id, el.value));
 });
+
+// ===== Tier Presets & Advanced Settings =====
+const TIER_PRESETS = {
+  free:  { concurrent: 2,  concurrent_max: 4,   concurrent_min: 1, record_retries: 3, aiup_after: 10, max_retries: 5, base_backoff: 2.0 },
+  "1":   { concurrent: 5,  concurrent_max: 10,  concurrent_min: 1, record_retries: 3, aiup_after: 8,  max_retries: 5, base_backoff: 1.5 },
+  "2":   { concurrent: 10, concurrent_max: 20,  concurrent_min: 2, record_retries: 3, aiup_after: 6,  max_retries: 5, base_backoff: 1.0 },
+  "3":   { concurrent: 20, concurrent_max: 40,  concurrent_min: 2, record_retries: 3, aiup_after: 5,  max_retries: 5, base_backoff: 1.0 },
+  "4":   { concurrent: 30, concurrent_max: 60,  concurrent_min: 3, record_retries: 3, aiup_after: 4,  max_retries: 5, base_backoff: 0.5 },
+  "5":   { concurrent: 50, concurrent_max: 100, concurrent_min: 5, record_retries: 3, aiup_after: 3,  max_retries: 5, base_backoff: 0.5 },
+};
+
+function initAdvancedSettings() {
+  const tierSel = document.getElementById('tierSelect');
+  if (!tierSel) return;
+
+  // Restore tier
+  const savedTier = localStorage.getItem('tierSelect');
+  if (savedTier) tierSel.value = savedTier;
+
+  // Restore individual advanced fields
+  const advIds = ['adv_concurrent','adv_concurrent_max','adv_concurrent_min',
+    'adv_record_retries','adv_aiup_after','adv_max_retries','adv_base_backoff'];
+  advIds.forEach(id => {
+    const v = localStorage.getItem(id);
+    const el = document.getElementById(id);
+    if (el && v != null) el.value = v;
+  });
+
+  // If no saved values, apply current tier defaults
+  const hasAny = advIds.some(id => localStorage.getItem(id) != null);
+  if (!hasAny) applyTierPreset(tierSel.value || '3');
+
+  tierSel.addEventListener('change', () => applyTierPreset(tierSel.value));
+}
+
+function applyTierPreset(tier) {
+  const preset = TIER_PRESETS[tier];
+  if (!preset) return;
+  const map = {
+    adv_concurrent: 'concurrent',
+    adv_concurrent_max: 'concurrent_max',
+    adv_concurrent_min: 'concurrent_min',
+    adv_record_retries: 'record_retries',
+    adv_aiup_after: 'aiup_after',
+    adv_max_retries: 'max_retries',
+    adv_base_backoff: 'base_backoff',
+  };
+  for (const [elId, key] of Object.entries(map)) {
+    const el = document.getElementById(elId);
+    if (el) {
+      el.value = preset[key];
+      savePref(elId, preset[key]);
+    }
+  }
+}
+
+function getAdvancedParams() {
+  const num = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return undefined;
+    const v = el.value?.trim();
+    if (v === '' || v == null) return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const adv = {};
+  const c = num('adv_concurrent');      if (c !== undefined) adv.concurrency = c;
+  const cm = num('adv_concurrent_max'); if (cm !== undefined) adv.concurrency_max = cm;
+  const cmin = num('adv_concurrent_min'); if (cmin !== undefined) adv.concurrent_min = cmin;
+  const rr = num('adv_record_retries'); if (rr !== undefined) adv.record_max_retries = rr;
+  const aiup = num('adv_aiup_after');   if (aiup !== undefined) adv.aiup_after = aiup;
+  const mr = num('adv_max_retries');    if (mr !== undefined) adv.max_retries = mr;
+  const bb = num('adv_base_backoff');   if (bb !== undefined) adv.base_backoff = bb;
+  return adv;
+}
 
 // ===== Upload & read =====
 const fileInput = document.getElementById("fileInput");
@@ -349,6 +428,9 @@ function buildPayload(){
     const t = document.getElementById("temperature")?.value?.trim();
     if (t) params.temperature = Number(t);
   }
+  // Merge advanced concurrency params
+  const advParams = getAdvancedParams();
+  Object.assign(params, advParams);
   return {
     model,
     api_key,
@@ -381,7 +463,7 @@ btnSend.addEventListener("click", async () => {
     clearError();
     const payload = buildPayload();
     lastPayload = payload;
-    const prev = btnSend.textContent; btnSend.textContent = "Sending..."; btnSend.disabled = true;
+    const prevHTML = btnSend.innerHTML; btnSend.textContent = "Sending…"; btnSend.disabled = true;
     const controller = new AbortController(); const timeout = setTimeout(()=>controller.abort(), 30000);
     const resp = await fetch(`/api/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal }).finally(()=>clearTimeout(timeout));
     if (!resp.ok) {
@@ -395,7 +477,7 @@ btnSend.addEventListener("click", async () => {
     }
     const data = await resp.json(); const jobId = data.job_id; showProgress(jobId);
   } catch (e) { showError(e.message || String(e)); }
-  finally { btnSend.textContent = "Send to backend"; btnSend.disabled = false; }
+  finally { btnSend.innerHTML = prevHTML; btnSend.disabled = false; }
 });
 
 // Clear spreadsheet handler
