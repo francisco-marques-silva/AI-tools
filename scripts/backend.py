@@ -792,7 +792,8 @@ def result(job_id: str, format: str = "csv"):
 
 
 # Serve static frontend from current directory at root
-app.mount("/", StaticFiles(directory=".", html=True), name="static")
+import pathlib as _pathlib
+app.mount("/", StaticFiles(directory=str(_pathlib.Path(__file__).parent), html=True), name="static")
 
 # Run with: uvicorn backend:app --reload --port 8000
 #.\.venv\Scripts\python.exe -m uvicorn backend:app --reload --port 8000

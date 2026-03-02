@@ -1,4 +1,9 @@
-# AI-Tools — Systematic Review AI Screening & Diagnostic Evaluation
+<h1>
+  <img src="scripts/logo.avif" alt="AI-Tools Logo" height="52" align="left" style="margin-right:14px">
+  AI-Tools — Systematic Review AI Screening &amp; Diagnostic Evaluation
+</h1>
+
+&nbsp;
 
 A platform for **automated screening** of scientific articles via OpenAI models and **diagnostic evaluation** comparing AI decisions against human reviewers in systematic reviews.
 
@@ -19,11 +24,12 @@ A platform for **automated screening** of scientific articles via OpenAI models 
 
 ```
 AI-tools/
-├── backend.py                  ← FastAPI backend (AI screening)
-├── index.html                  ← Web application frontend
-├── app.js                      ← Frontend logic (JS)
-├── style.css                   ← Frontend styles
-├── logo.avif                   ← Application logo
+├── scripts/                    ← Web application files
+│   ├── backend.py              ← FastAPI backend (AI screening)
+│   ├── index.html              ← Web application frontend
+│   ├── app.js                  ← Frontend logic (JS)
+│   ├── style.css               ← Frontend styles
+│   └── logo.avif               ← Application logo
 ├── report/                     ← Unified report (multi-project)
 │   └── relatorio_unificado.py  ← Generates consolidated Word report
 ├── input/                      ← Input files (not versioned)
@@ -67,7 +73,7 @@ pip install pandas numpy openpyxl python-docx
 ### Running the Web App
 
 ```bash
-uvicorn backend:app --port 8000
+uvicorn scripts.backend:app --port 8000
 ```
 
 Open **http://localhost:8000** in your browser.
@@ -187,9 +193,9 @@ YYYYMMDD - model - Xº teste - project.xlsx
 | `code` | text | Date/code matching the AI result filename |
 | `model` | text | Model name (must match AI result filename) |
 | `parameter` | text | Parameter configuration description |
-| `version` | text | Model version or variant |
+| `version` | text | Test number: `1º teste` or `2º teste` (used for test-retest pairing) |
 | `time_ia` | timedelta | AI execution time (HH:MM:SS format) |
-| `time_human` | timedelta | Estimated human time for equivalent task |
+| `time_human` | timedelta | TIAB human screening time: 1 min/record × 2 reviewers (in researcher-hours) |
 | `tokens input` | numeric | Input tokens consumed |
 | `tokens_output` | numeric | Output tokens generated |
 | `cost_input` | numeric | Input token cost (USD) |
@@ -326,7 +332,7 @@ Only articles that survived full-text evaluation should appear here. The report 
 
 ### Step 4: Run AI Screening
 
-1. Start the web app: `uvicorn backend:app --port 8000`
+1. Start the web app: `uvicorn scripts.backend:app --port 8000`
 2. Open http://localhost:8000
 3. Select a model (e.g., GPT-5.2)
 4. Enter your API key
@@ -356,10 +362,10 @@ Create `metadata.xlsx` in the `input/` folder with one row per AI execution:
 - **`code`**: The YYYYMMDD prefix of your AI result file.
 - **`model`**: Must match the model name in your AI result file.
 - **`parameter`**: Free-text description of AI parameters used.
-- **`version`**: Model version or identifier.
+- **`version`**: Test number — `1º teste` or `2º teste`. This identifies replication runs for the test-retest analysis.
 - **`time_ia`**: How long the AI took (format: `H:MM:SS` or `HH:MM:SS`).
-- **`time_human`**: Estimated time a human would take for the same task. This is used in the **Workload Reduction** analysis (Section 11). Estimate based on average screening speed (e.g., 30 seconds per article × number of articles).
-- **`tokens input` / `tokens_output`**: Token counts from the AI execution (available in the downloaded results or OpenAI dashboard).
+- **`time_human`**: Human time for TIAB screening, calculated as **1 minute per record × 2 reviewers**, expressed in researcher-hours (format: `H:MM:SS`). Used in the **Workload Reduction** analysis (Section 11).
+- **`tokens input` / `tokens_output`**: Token counts from the execution, available in the **OpenAI dashboard** (Usage section).
 - **`cost_input` / `cost_output` / `cost_total`**: Costs in USD (available from OpenAI usage dashboard).
 
 ### Step 6: Place All Files in `input/`
