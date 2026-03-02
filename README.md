@@ -7,7 +7,6 @@
   <strong>Author:</strong> Francisco Marques (<a href="https://github.com/francisco-marques-silva">francisco-marques-silva</a>)<br>
   <strong>Contact:</strong> <a href="mailto:francisco@pesquisaemdados.com.br">francisco@pesquisaemdados.com.br</a>
 </p>
-
 &nbsp;
 
 A platform for **automated screening** of scientific articles via OpenAI models and **diagnostic evaluation** comparing AI decisions against human reviewers in systematic reviews.
