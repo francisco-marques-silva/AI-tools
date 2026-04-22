@@ -791,10 +791,11 @@ def result(job_id: str, format: str = "csv"):
         )
 
 
-# Serve static frontend from current directory at root
-import pathlib as _pathlib
-app.mount("/", StaticFiles(directory=str(_pathlib.Path(__file__).parent), html=True), name="static")
-
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# Serve static frontend from current directory at root — must be last (catch-all mount)
+import pathlib as _pathlib
+app.mount("/", StaticFiles(directory=str(_pathlib.Path(__file__).parent), html=True), name="static")
