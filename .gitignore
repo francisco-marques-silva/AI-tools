@@ -4,12 +4,6 @@ __pycache__/
 *.bak
 *.pyc
 
-# Input files (track folder structure, not contents)
-input/*
-!input/.gitkeep
-
-# Output files (track folder structure, not contents)
-output/*
-!output/.gitkeep
-
-
+# Local data directories (not part of repo — files uploaded via web UI)
+input/
+output/

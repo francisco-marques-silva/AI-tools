@@ -33,8 +33,25 @@
     </div>
   </header>
 
+  <!-- ===== TAB NAV ===== -->
+  <nav class="tab-nav">
+    <div class="tab-nav-inner">
+      <button class="tab-btn active" data-tab="screening">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Screening
+      </button>
+      <button class="tab-btn" data-tab="report">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Report
+      </button>
+    </div>
+  </nav>
+
   <!-- ===== MAIN ===== -->
   <main class="container">
+
+  <!-- ===== SCREENING PANE ===== -->
+  <div id="pane-screening" class="tab-pane">
 
     <!-- ===== STEP 1: Config Row ===== -->
     <div class="grid-2col">
@@ -303,6 +320,172 @@
       </div>
       <pre id="liveLog" class="code hidden" style="max-height:240px; overflow:auto;"></pre>
     </section>
+
+  </div><!-- /pane-screening -->
+
+  <!-- ===== REPORT PANE ===== -->
+  <div id="pane-report" class="tab-pane hidden">
+
+    <!-- How to Use Validation -->
+    <section class="card how-to-card" id="howToCard">
+      <details>
+        <summary class="card-title clickable">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          How to Use the Validation Report
+          <span class="how-to-badge">Guide</span>
+        </summary>
+        <div class="how-to-body">
+          <ol class="how-to-steps">
+            <li class="how-to-step">
+              <div class="step-title">Run AI Screening</div>
+              <p>Go to the <strong>Screening</strong> tab. Upload your TIAB spreadsheet (needs <code>title</code> and <code>abstract</code> columns), configure the model, API key, and PICO criteria, then click <strong>Send to Backend</strong>. Download the result when done.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Rename the AI result file</div>
+              <p>Rename the downloaded file to match the convention:<br>
+              <code>YYYYMMDD - model - 1º teste - project.xlsx</code><br>
+              For test-retest analysis, run screening again and name it <code>2º teste</code>.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Prepare human reference files</div>
+              <p>For each project, create three spreadsheets (columns: <code>title</code>, <code>decision</code>):</p>
+              <ul>
+                <li><code>project - TIAB.xlsx</code> — human decisions at title/abstract phase</li>
+                <li><code>project - Fulltext.xlsx</code> — articles sent to full-text reading</li>
+                <li><code>project - Listfinal.xlsx</code> — final included articles (gold standard)</li>
+              </ul>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Create metadata.xlsx</div>
+              <p>One row per AI execution. Required columns:</p>
+              <div class="table-scroll">
+                <table class="meta-table">
+                  <thead><tr><th>Column</th><th>Example</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>project</code></td><td>mino</td><td>Must match the project name in all file names</td></tr>
+                    <tr><td><code>code</code></td><td>20260227</td><td>YYYYMMDD from the AI result filename</td></tr>
+                    <tr><td><code>model</code></td><td>gpt-5-mini</td><td>Must match the model in the AI result filename</td></tr>
+                    <tr><td><code>parameter</code></td><td>reasoning=medium</td><td>Free-text description of settings used</td></tr>
+                    <tr><td><code>version</code></td><td>1º teste</td><td><code>1º teste</code> or <code>2º teste</code></td></tr>
+                    <tr><td><code>time_ia</code></td><td>0:04:32</td><td>AI execution time (H:MM:SS)</td></tr>
+                    <tr><td><code>time_human</code></td><td>2:00:00</td><td>Human time: 1 min/record × 2 reviewers</td></tr>
+                    <tr><td><code>tokens input</code></td><td>152340</td><td>Input token count (OpenAI dashboard)</td></tr>
+                    <tr><td><code>tokens_output</code></td><td>28450</td><td>Output token count</td></tr>
+                    <tr><td><code>cost_total</code></td><td>0.137</td><td>Total cost in USD</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Upload all files and generate</div>
+              <p>Drag all your files into the <strong>Input Files</strong> area below and click <strong>Generate Report</strong>. The system will produce a Word report, chart data XLSX, and 16 publication-ready charts — all viewable directly in the browser.</p>
+            </li>
+          </ol>
+        </div>
+      </details>
+    </section>
+
+    <!-- Upload Card -->
+    <section class="card">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        Input Files
+      </h2>
+      <p class="report-hint">Upload all input files: AI screening results, TIAB, Fulltext, Listfinal, and <code>metadata.xlsx</code>. Filenames must follow the naming conventions described in the README.</p>
+
+      <div id="reportDropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload report input files">
+        <input id="reportFileInput" type="file" accept=".xlsx,.xls,.csv" multiple />
+        <div class="dropzone-content">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>Drag &amp; drop input files here</p>
+          <p class="hint">AI results · TIAB · Fulltext · Listfinal · metadata.xlsx</p>
+        </div>
+      </div>
+
+      <div id="reportFileList" class="report-file-list hidden"></div>
+
+      <details class="naming-guide">
+        <summary>Expected filename patterns</summary>
+        <div class="naming-guide-body">
+          <table class="naming-table">
+            <thead><tr><th>File type</th><th>Pattern</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge warn">AI Result</span></td><td><code>YYYYMMDD - model - Xº teste - project.xlsx</code></td></tr>
+              <tr><td><span class="badge ok">Human TIAB</span></td><td><code>project - TIAB.xlsx</code></td></tr>
+              <tr><td><span class="badge ok">Fulltext</span></td><td><code>project - Fulltext.xlsx</code></td></tr>
+              <tr><td><span class="badge ok">Listfinal</span></td><td><code>project - Listfinal.xlsx</code></td></tr>
+              <tr><td><span class="badge">Metadata</span></td><td><code>metadata.xlsx</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+
+    <!-- Actions -->
+    <section class="card actions-card">
+      <div class="action-row">
+        <button id="btnGenReport" class="btn btn-primary" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Generate Report
+        </button>
+        <button id="btnClearReport" class="btn btn-ghost">Clear files</button>
+        <span class="save-hint">Outputs: Word report + chart data XLSX</span>
+      </div>
+      <div id="reportError" class="error-banner hidden"></div>
+    </section>
+
+    <!-- Progress + Downloads -->
+    <section id="reportProgressCard" class="card hidden">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        Generation Log
+      </h2>
+      <pre id="reportLog" class="code report-log"></pre>
+      <div id="reportDownloads" class="report-downloads hidden">
+        <p class="downloads-title">Output files ready — download or view below</p>
+        <div id="reportDownloadLinks" class="download-links"></div>
+      </div>
+    </section>
+
+    <!-- Results: Charts + Tables -->
+    <section id="reportResultsCard" class="card hidden">
+      <div class="res-tabs-bar">
+        <button class="res-tab active" data-rt="charts">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Charts
+        </button>
+        <button class="res-tab" data-rt="tables">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+          Data Tables
+        </button>
+      </div>
+
+      <div id="rt-charts" class="res-pane">
+        <div id="chartsGrid" class="charts-grid"></div>
+      </div>
+
+      <div id="rt-tables" class="res-pane hidden">
+        <div class="sheet-selector-bar">
+          <label class="field inline-field">
+            <span>Sheet</span>
+            <select id="sheetSelector"></select>
+          </label>
+        </div>
+        <div id="sheetTableWrap" class="table-wrap sheet-table-wrap"></div>
+      </div>
+    </section>
+
+  </div><!-- /pane-report -->
+
+  <!-- Lightbox (outside panes, fixed overlay) -->
+  <div id="chartLightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content">
+      <button class="lightbox-close" aria-label="Close">×</button>
+      <img id="lightboxImg" src="" alt="" />
+      <p id="lightboxCaption" class="lightbox-caption"></p>
+    </div>
+  </div>
 
   </main>
 

@@ -291,14 +291,19 @@ def main():
         "--input_dir", "-i", default=None,
         help="Folder with input files (default: input/).",
     )
+    parser.add_argument(
+        "--output_dir", "-o", default=None,
+        help="Folder for output files (default: output/).",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir) if args.input_dir else INPUT_DIR
+    output_dir = Path(args.output_dir) if args.output_dir else OUTPUT_DIR
     if not input_dir.is_dir():
         print(f"\n  ERROR: Input folder not found: {input_dir}")
         sys.exit(1)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- Detect files ----
     print(f"\n  Scanning folder: {input_dir}")
@@ -328,21 +333,21 @@ def main():
 
     # ---- Generate Word report (tables only, no charts) ----
     print("\n  Generating Word report...")
-    docx_path = generate_report(projects, metadados, all_results, OUTPUT_DIR)
+    docx_path = generate_report(projects, metadados, all_results, output_dir)
     print(f"\n  ✓ Report generated: {docx_path.name}")
 
     # ---- Export chart data XLSX ----
     print("  Exporting chart data XLSX...")
-    xlsx_path = export_chart_data(projects, metadados, all_results, OUTPUT_DIR)
+    xlsx_path = export_chart_data(projects, metadados, all_results, output_dir)
     print(f"  ✓ Chart data exported: {xlsx_path.name}")
 
     # ---- Generate FP workspace XLSX ----
     print("  Generating FP workspace XLSX...")
-    fp_path = generate_fp_workarea(projects, all_results, OUTPUT_DIR)
+    fp_path = generate_fp_workarea(projects, all_results, output_dir)
     if fp_path:
         print(f"  ✓ FP workspace exported: {fp_path.name}")
 
-    print(f"\n    Output folder: {OUTPUT_DIR}")
+    print(f"\n    Output folder: {output_dir}")
     print("=" * 70)
     print()
 

@@ -1,14 +1,19 @@
 import os
+import sys
 import uuid
 import json
 import threading
 import time
 import io
 import random
+import subprocess
+import tempfile
+import shutil
 import concurrent.futures
+from pathlib import Path as _Path
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -794,6 +799,213 @@ def result(job_id: str, format: str = "csv"):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# ===========================================================================
+#  REPORT GENERATION
+# ===========================================================================
+
+REPORT_JOBS: Dict[str, Dict[str, Any]] = {}
+
+_REPORT_SCRIPT  = str(_Path(__file__).resolve().parent.parent / "report" / "001_report.py")
+_GRAPHIC_SCRIPT = str(_Path(__file__).resolve().parent.parent / "report" / "graphic.py")
+
+
+def report_worker(job_id: str):
+    job = REPORT_JOBS[job_id]
+    input_dir  = job["input_dir"]
+    output_dir = job["output_dir"]
+    charts_dir = str(_Path(output_dir) / "charts")
+    job["charts_dir"] = charts_dir
+    job["charts"] = []
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+    try:
+        # ── Step 1: run the report pipeline ──────────────────────────
+        proc = subprocess.Popen(
+            [sys.executable, _REPORT_SCRIPT,
+             "--input_dir", input_dir, "--output_dir", output_dir],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", env=env,
+        )
+        for line in proc.stdout:
+            job["log"].append(line.rstrip("\n"))
+        proc.wait()
+
+        out_files = sorted(f.name for f in _Path(output_dir).glob("*") if f.is_file())
+        job["output_files"] = out_files
+
+        if proc.returncode != 0:
+            job["status"] = "error"
+            return
+
+        # ── Step 2: generate charts from the XLSX ────────────────────
+        xlsx_files = sorted(_Path(output_dir).glob("data_grafics_*.xlsx"))
+        if xlsx_files:
+            _Path(charts_dir).mkdir(exist_ok=True)
+            job["log"].append("")
+            job["log"].append("  Generating charts…")
+            cp = subprocess.Popen(
+                [sys.executable, _GRAPHIC_SCRIPT, str(xlsx_files[-1]), "-o", charts_dir],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", env=env,
+            )
+            for line in cp.stdout:
+                job["log"].append(line.rstrip("\n"))
+            cp.wait()
+            job["charts"] = sorted(f.name for f in _Path(charts_dir).glob("*.png"))
+
+        job["status"] = "done"
+    except Exception as exc:
+        job["log"].append(f"Internal error: {exc}")
+        job["output_files"] = []
+        job["charts"] = []
+        job["status"] = "error"
+
+
+@app.post("/api/report/start")
+async def report_start(files: list[UploadFile] = File(...)):
+    job_id = str(uuid.uuid4())
+    tmp = tempfile.mkdtemp(prefix="aireport_")
+    input_dir = str(_Path(tmp) / "input")
+    output_dir = str(_Path(tmp) / "output")
+    _Path(input_dir).mkdir()
+    _Path(output_dir).mkdir()
+
+    saved: List[str] = []
+    for f in files:
+        safe_name = _Path(f.filename or "").name
+        if not safe_name:
+            continue
+        dest = _Path(input_dir) / safe_name
+        content = await f.read()
+        dest.write_bytes(content)
+        saved.append(safe_name)
+
+    if not saved:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="No files received.")
+
+    REPORT_JOBS[job_id] = {
+        "status": "running",
+        "log": [],
+        "input_dir": input_dir,
+        "output_dir": output_dir,
+        "tmp": tmp,
+        "output_files": [],
+        "uploaded_files": saved,
+    }
+    th = threading.Thread(target=report_worker, args=(job_id,), daemon=True)
+    th.start()
+    return {"job_id": job_id, "files": saved}
+
+
+@app.get("/api/report/stream/{job_id}")
+def report_stream(job_id: str):
+    job = REPORT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="report job not found")
+
+    def event_gen():
+        sent = 0
+        while True:
+            log = job.get("log", [])
+            while sent < len(log):
+                yield f"data: {json.dumps({'type': 'log', 'line': log[sent]})}\n\n"
+                sent += 1
+            status = job.get("status", "running")
+            if status in ("done", "error"):
+                yield f"data: {json.dumps({'type': 'done', 'status': status, 'files': job.get('output_files', []), 'charts': job.get('charts', [])})}\n\n"
+                break
+            time.sleep(0.25)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@app.get("/api/report/chart/{job_id}/{filename}")
+def report_chart_image(job_id: str, filename: str):
+    job = REPORT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    charts_dir = job.get("charts_dir")
+    if not charts_dir:
+        raise HTTPException(status_code=404, detail="no charts available")
+    safe_name = _Path(filename).name
+    if not safe_name.endswith(".png"):
+        raise HTTPException(status_code=400, detail="only PNG files")
+    file_path = _Path(charts_dir) / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="chart not found")
+    return Response(content=file_path.read_bytes(), media_type="image/png")
+
+
+@app.get("/api/report/tabledata/{job_id}")
+def report_tabledata_sheets(job_id: str):
+    job = REPORT_JOBS.get(job_id)
+    if not job or job.get("status") != "done":
+        raise HTTPException(status_code=404, detail="job not ready")
+    xlsx_files = sorted(_Path(job["output_dir"]).glob("data_grafics_*.xlsx"))
+    if not xlsx_files:
+        return JSONResponse({"sheets": []})
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(str(xlsx_files[-1]), read_only=True, data_only=True)
+        sheets = list(wb.sheetnames)
+        wb.close()
+        return JSONResponse({"sheets": sheets, "xlsx": xlsx_files[-1].name})
+    except Exception as e:
+        return JSONResponse({"sheets": [], "error": str(e)})
+
+
+@app.get("/api/report/tabledata/{job_id}/{sheet_name}")
+def report_tabledata_sheet(job_id: str, sheet_name: str):
+    job = REPORT_JOBS.get(job_id)
+    if not job or job.get("status") != "done":
+        raise HTTPException(status_code=404, detail="job not ready")
+    xlsx_files = sorted(_Path(job["output_dir"]).glob("data_grafics_*.xlsx"))
+    if not xlsx_files:
+        raise HTTPException(status_code=404, detail="no XLSX found")
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(str(xlsx_files[-1]), read_only=True, data_only=True)
+        if sheet_name not in wb.sheetnames:
+            raise HTTPException(status_code=404, detail="sheet not found")
+        ws = wb[sheet_name]
+        rows: List[List[str]] = []
+        for row in ws.iter_rows(values_only=True):
+            rows.append([("" if v is None else str(v)) for v in row])
+            if len(rows) >= 502:
+                break
+        wb.close()
+        if not rows:
+            return JSONResponse({"headers": [], "rows": []})
+        return JSONResponse({"headers": rows[0], "rows": rows[1:500]})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/report/download/{job_id}/{filename}")
+def report_download(job_id: str, filename: str):
+    job = REPORT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="report job not found")
+    safe_name = _Path(filename).name
+    file_path = _Path(job["output_dir"]) / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    data = file_path.read_bytes()
+    if safe_name.endswith(".docx"):
+        mt = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif safe_name.endswith(".xlsx"):
+        mt = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        mt = "application/octet-stream"
+    return Response(
+        content=data,
+        media_type=mt,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
 
 
 # Serve static frontend from current directory at root — must be last (catch-all mount)
