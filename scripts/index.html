@@ -63,6 +63,23 @@
   <!-- ===== SCREENING PANE ===== -->
   <div id="pane-screening" class="tab-pane" role="tabpanel">
 
+    <!-- Pane Banner -->
+    <div class="pane-header pane-header-screening">
+      <div class="pane-header-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </div>
+      <div class="pane-header-content">
+        <h2 class="pane-header-title">AI Screening</h2>
+        <p class="pane-header-desc">Configure a model, upload your TIAB spreadsheet, and let AI screen every title &amp; abstract — returning include, exclude, or maybe decisions.</p>
+      </div>
+    </div>
+
+    <!-- Step 1 -->
+    <div class="step-divider">
+      <span class="step-divider-num">1</span>
+      <span class="step-divider-label">Configuration &amp; Study Context</span>
+    </div>
+
     <!-- ===== STEP 1: Config Row ===== -->
     <div class="grid-2col">
 
@@ -167,6 +184,12 @@
           <div id="exclusionList" class="criteria-list"></div>
         </div>
       </section>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-divider">
+      <span class="step-divider-num">2</span>
+      <span class="step-divider-label">Spreadsheet Upload</span>
     </div>
 
     <!-- ===== Advanced Backend Settings ===== -->
@@ -279,6 +302,12 @@
       </div>
     </section>
 
+    <!-- Step 3 -->
+    <div class="step-divider">
+      <span class="step-divider-num">3</span>
+      <span class="step-divider-label">Send &amp; Download</span>
+    </div>
+
     <!-- ===== STEP 3: Actions ===== -->
     <section class="card actions-card" id="actionsCard">
       <div class="action-row">
@@ -335,6 +364,17 @@
 
   <!-- ===== REPORT PANE ===== -->
   <div id="pane-report" class="tab-pane" role="tabpanel">
+
+    <!-- Pane Banner -->
+    <div class="pane-header pane-header-report">
+      <div class="pane-header-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      </div>
+      <div class="pane-header-content">
+        <h2 class="pane-header-title">Validation Report</h2>
+        <p class="pane-header-desc">Compare AI screening decisions against human reviewers — generates a Word report, chart data XLSX, and 16 publication-ready charts.</p>
+      </div>
+    </div>
 
     <!-- How to Use Validation -->
     <section class="card how-to-card" id="howToCard">

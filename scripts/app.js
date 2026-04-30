@@ -1,3 +1,8 @@
+// Scroll to top on tab switch
+document.querySelectorAll('.tab-radio').forEach(r => {
+  r.addEventListener('change', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+});
+
 // ===== State =====
 const state = {
   workbook: null,

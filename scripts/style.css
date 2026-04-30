@@ -16,6 +16,11 @@
   --primary-hover:#2d55c4;
   --primary-weak: #eaf0ff;
   --primary-ring: rgba(59, 108, 231, 0.2);
+  --report-color:  #0d9488;
+  --report-hover:  #0f766e;
+  --report-weak:   #f0fdfa;
+  --report-border: #99f6e4;
+  --report-ring:   rgba(13, 148, 136, 0.2);
   --ok:           #16a34a;
   --ok-bg:        #ecfdf5;
   --ok-border:    #bbf7d0;
@@ -54,14 +59,27 @@ body {
 .tab-pane { display: none; }
 #tab-r-screening:checked ~ main #pane-screening { display: block; }
 #tab-r-report:checked ~ main #pane-report { display: block; }
-#tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"],
-#tab-r-report:checked ~ .tab-nav label[for="tab-r-report"] {
+
+/* Active tab — Screening (blue) */
+#tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"] {
   color: var(--primary);
   border-bottom-color: var(--primary);
+  background: var(--primary-weak);
 }
-#tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"] .tab-btn-sub,
-#tab-r-report:checked ~ .tab-nav label[for="tab-r-report"] .tab-btn-sub {
+#tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"] .tab-btn-sub {
   color: var(--primary);
+  opacity: 0.75;
+}
+
+/* Active tab — Report (teal) */
+#tab-r-report:checked ~ .tab-nav label[for="tab-r-report"] {
+  color: var(--report-color);
+  border-bottom-color: var(--report-color);
+  background: var(--report-weak);
+}
+#tab-r-report:checked ~ .tab-nav label[for="tab-r-report"] .tab-btn-sub {
+  color: var(--report-color);
+  opacity: 0.75;
 }
 
 /* ===== Top Bar ===== */
@@ -662,36 +680,121 @@ code {
 .tab-nav {
   background: var(--card);
   border-bottom: 2px solid var(--border);
-  box-shadow: 0 2px 6px rgba(0,0,0,.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
 }
 .tab-nav-inner {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 20px;
   display: flex;
-  gap: 0;
+  gap: 2px;
+  align-items: stretch;
 }
 .tab-btn {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 28px;
+  padding: 14px 24px;
   font-family: inherit;
   color: var(--text-secondary);
   background: transparent;
   border: none;
   border-bottom: 3px solid transparent;
   cursor: pointer;
-  transition: all var(--transition);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
   margin-bottom: -2px;
   text-decoration: none;
   user-select: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
-.tab-btn svg { color: inherit; flex-shrink: 0; }
-.tab-btn:hover { color: var(--text); background: var(--bg-subtle); }
-.tab-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.tab-btn svg { color: inherit; flex-shrink: 0; transition: color var(--transition); }
+.tab-btn:hover { color: var(--text); background: var(--bg); }
+.tab-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .tab-btn-title { font-size: 14px; font-weight: 600; line-height: 1; }
-.tab-btn-sub { font-size: 11px; color: var(--text-secondary); font-weight: 400; line-height: 1; }
+.tab-btn-sub { font-size: 11px; color: var(--text-secondary); font-weight: 400; line-height: 1; transition: color var(--transition); }
+
+/* ===== Pane Banner Headers ===== */
+.pane-header {
+  border-radius: var(--radius-lg);
+  margin-bottom: 24px;
+  padding: 22px 28px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border: 1px solid var(--border);
+}
+.pane-header-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pane-header-content { flex: 1; min-width: 0; }
+.pane-header-title {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin-bottom: 5px;
+  line-height: 1.2;
+}
+.pane-header-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.pane-header-screening {
+  background: linear-gradient(135deg, var(--primary-weak) 0%, #dce8ff 100%);
+  border-color: #c5d8ff;
+}
+.pane-header-screening .pane-header-icon { background: var(--primary); color: #fff; }
+.pane-header-screening .pane-header-title { color: var(--primary); }
+
+.pane-header-report {
+  background: linear-gradient(135deg, var(--report-weak) 0%, #ccfbf0 100%);
+  border-color: var(--report-border);
+}
+.pane-header-report .pane-header-icon { background: var(--report-color); color: #fff; }
+.pane-header-report .pane-header-title { color: var(--report-color); }
+
+/* ===== Workflow Step Dividers ===== */
+.step-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+.step-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.step-divider-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.step-divider-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  white-space: nowrap;
+}
 
 /* ===== Report Pane ===== */
 .report-hint {
