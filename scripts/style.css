@@ -49,6 +49,21 @@ body {
 
 .hidden { display: none !important; }
 
+/* ===== CSS Radio Tab System ===== */
+.tab-radio { display: none; }
+.tab-pane { display: none; }
+#tab-r-screening:checked ~ main #pane-screening { display: block; }
+#tab-r-report:checked ~ main #pane-report { display: block; }
+#tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"],
+#tab-r-report:checked ~ .tab-nav label[for="tab-r-report"] {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+#tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"] .tab-btn-sub,
+#tab-r-report:checked ~ .tab-nav label[for="tab-r-report"] .tab-btn-sub {
+  color: var(--primary);
+}
+
 /* ===== Top Bar ===== */
 .topbar {
   background: var(--card);
@@ -646,34 +661,37 @@ code {
 /* ===== Tab Navigation ===== */
 .tab-nav {
   background: var(--card);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  box-shadow: 0 2px 6px rgba(0,0,0,.05);
 }
 .tab-nav-inner {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 24px;
   display: flex;
-  gap: 4px;
+  gap: 0;
 }
 .tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 600;
+  gap: 12px;
+  padding: 16px 28px;
   font-family: inherit;
   color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   cursor: pointer;
   transition: all var(--transition);
-  margin-bottom: -1px;
+  margin-bottom: -2px;
+  text-decoration: none;
+  user-select: none;
 }
-.tab-btn svg { color: inherit; }
+.tab-btn svg { color: inherit; flex-shrink: 0; }
 .tab-btn:hover { color: var(--text); background: var(--bg-subtle); }
-.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.tab-btn-title { font-size: 14px; font-weight: 600; line-height: 1; }
+.tab-btn-sub { font-size: 11px; color: var(--text-secondary); font-weight: 400; line-height: 1; }
 
 /* ===== Report Pane ===== */
 .report-hint {
@@ -811,32 +829,38 @@ code {
 .meta-table thead th { background: var(--primary-weak); font-weight: 600; }
 .meta-table tbody tr:hover { background: var(--bg-subtle); }
 
-/* ===== Results Tabs ===== */
-.res-tabs-bar {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin: -24px -24px 20px;
-  padding: 0 20px;
+/* ===== Results Sections (Charts + Tables stacked) ===== */
+.results-section {
+  padding-top: 24px;
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
 }
-.res-tab {
+.results-section:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+.results-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.results-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.results-count {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: all var(--transition);
-  margin-bottom: -1px;
+  padding: 2px 9px;
+  background: var(--primary-weak);
+  color: var(--primary);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
 }
-.res-tab:hover { color: var(--text); }
-.res-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
 /* ===== Charts Gallery ===== */
 .charts-grid {

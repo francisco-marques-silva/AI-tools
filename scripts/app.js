@@ -1,12 +1,3 @@
-// ===== Tab switching =====
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const target = btn.dataset.tab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === target));
-    document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('hidden', p.id !== `pane-${target}`));
-  });
-});
-
 // ===== State =====
 const state = {
   workbook: null,
@@ -580,15 +571,6 @@ btnClearReport.addEventListener('click', () => {
   _currentReportJobId = null;
 });
 
-// ── Results tab switching ──────────────────────────────────────────
-document.querySelectorAll('.res-tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const target = btn.dataset.rt;
-    document.querySelectorAll('.res-tab').forEach(b => b.classList.toggle('active', b.dataset.rt === target));
-    document.querySelectorAll('.res-pane').forEach(p => p.classList.toggle('hidden', p.id !== `rt-${target}`));
-  });
-});
-
 // ── Chart gallery ─────────────────────────────────────────────────
 const CHART_LABELS = {
   'sensitivity_per_model_per_project': 'Sensitivity by Model per Project',
@@ -616,7 +598,7 @@ function chartLabel(filename) {
 
 function renderChartsGallery(jobId, chartFiles) {
   const grid = document.getElementById('chartsGrid');
-  if (!chartFiles.length) { grid.innerHTML = '<p class="muted" style="padding:16px">No charts were generated.</p>'; return; }
+  if (!chartFiles.length) { grid.innerHTML = '<p class="muted" style="padding:0 0 8px">No charts were generated.</p>'; return; }
   grid.innerHTML = chartFiles.map(fname => {
     const label = chartLabel(fname);
     const src = `/api/report/chart/${jobId}/${encodeURIComponent(fname)}`;
@@ -742,9 +724,9 @@ btnGenReport.addEventListener('click', async () => {
           resultsCard.classList.remove('hidden');
           renderChartsGallery(jobId, msg.charts || []);
           loadSheetList(jobId);
-          // update charts tab label
-          const chartsTab = document.querySelector('[data-rt="charts"]');
-          if (chartsTab && msg.charts && msg.charts.length) chartsTab.innerHTML = chartsTab.innerHTML.replace('Charts', `Charts (${msg.charts.length})`);
+          // update charts count badge
+          const badge = document.getElementById('chartsCountBadge');
+          if (badge && msg.charts && msg.charts.length) { badge.textContent = `${msg.charts.length} charts`; badge.classList.remove('hidden'); }
         } else if (msg.status === 'error') {
           reportError.textContent = 'Report generation failed. See log above for details.';
           reportError.classList.remove('hidden');
