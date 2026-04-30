@@ -269,7 +269,7 @@ function addCriteriaInput(container, value, kind){
   remove.className = 'icon-btn remove-criterion';
   remove.title = 'Remove this criterion';
   remove.setAttribute('aria-label', 'Remove');
-  remove.textContent = 'x';
+  remove.textContent = '×';
   remove.addEventListener('click', () => {
     const total = container.querySelectorAll('input').length;
     if (total > 1) {
@@ -378,9 +378,9 @@ function validateAndPreview(){
   const cols = inferColumns(state.rows);
   const hasTitle = cols.includes("title"); const hasAbstract = cols.includes("abstract");
   let statusHtml = "";
-  if (hasTitle && hasAbstract) statusHtml = `<span class="badge ok">OK</span> Detected columns: <b>title</b>, <b>abstract</b>.`;
+  if (hasTitle && hasAbstract) statusHtml = `<strong style="color:var(--ok)">✓</strong> Detected required columns: <code>title</code>, <code>abstract</code>.`;
   else if (!state.rows.length) statusHtml = `No rows could be read from this sheet/file.`;
-  else { const miss=[]; if(!hasTitle) miss.push("title"); if(!hasAbstract) miss.push("abstract"); statusHtml = `<span class="badge bad">Missing</span> Missing columns: <b>${miss.join(", ")}</b>.`; }
+  else { const miss=[]; if(!hasTitle) miss.push("title"); if(!hasAbstract) miss.push("abstract"); statusHtml = `<span class="badge bad">Missing</span> Required columns not found: <code>${miss.join("</code>, <code>")}</code>.`; }
   columnsStatus.innerHTML = statusHtml;
 
   const head = previewTable.querySelector("thead"); const body = previewTable.querySelector("tbody"); head.innerHTML = ""; body.innerHTML = "";

@@ -517,6 +517,11 @@ tbody tr:hover { background: var(--bg-subtle); }
 }
 .payload-header .card-title { margin-bottom: 0; }
 
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace;
+  font-size: 12px;
+}
+
 .code {
   background: var(--bg-subtle);
   border: 1px solid var(--border);
