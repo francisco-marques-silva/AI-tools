@@ -1,44 +1,34 @@
 """
-001_report.py — Thin CLI entry-point.
+main.py — CLI entry-point for the report pipeline.
 
 Orchestrates the full pipeline:
     scan input/  →  build project structure  →  validate data
     →  run all analyses  →  generate Word report  →  export chart XLSX
 
 Usage:
-    python report/001_report.py                       # auto-detect input/
-    python report/001_report.py --input_dir DIR       # custom input folder
-
-Modules consumed (via report package aliases):
-    constants        Paths and shared configuration
-    utils            I/O, normalisation, formatting helpers
-    file_detection   File pattern matching and project grouping
-    analysis         Statistical analysis functions
-    chart_data       Chart XLSX export  (data_grafics_*.xlsx)
-    docx_helpers     Word formatting primitives
-    report_generator Report document builder (tables only)
+    python backend/report/main.py                       # auto-detect input/
+    python backend/report/main.py --input_dir DIR       # custom input folder
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-# Ensure the project root is on sys.path so ``from report.*`` works
-# even when this script is invoked directly: python report/001_report.py
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Add project root to sys.path so package imports work when run as a script
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from report.constants import INPUT_DIR, OUTPUT_DIR
-from report.utils import fmt, fmt_pct, normalise_model_name
-from report.file_detection import scan_input_dir, build_project_structure
-from report.analysis import (
+from backend.report.constants import INPUT_DIR, OUTPUT_DIR
+from backend.report.utils import fmt, fmt_pct, normalise_model_name
+from backend.report.file_detection import scan_input_dir, build_project_structure
+from backend.report.analysis import (
     run_diagnostic,
     run_fulltext_check,
     run_listfinal_check,
     run_test_retest,
 )
-from report.chart_data import export_chart_data
-from report.report_generator import generate_report
-from report.fp_workarea import generate_fp_workarea
+from backend.report.chart_data import export_chart_data
+from backend.report.report_generator import generate_report
+from backend.report.fp_workarea import generate_fp_workarea
 
 
 # ===========================================================================
@@ -335,7 +325,7 @@ def main():
     # ---- Run analyses ----
     all_results = run_all_analyses(projects, metadados)
 
-    # ---- Generate Word report (tables only, no charts) ----
+    # ---- Generate Word report ----
     print("\n  Generating Word report...")
     docx_path = generate_report(projects, metadados, all_results, output_dir)
     print(f"\n  ✓ Report generated: {docx_path.name}")

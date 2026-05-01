@@ -247,7 +247,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                 str(row.get("parameter", "")),
                 str(row.get("version", "")),
                 str(row.get("time_ia", "")),
-                str(int(row["tokens input"])) if pd.notna(row.get("tokens input")) else "-",
+                str(int(row["tokens_input"])) if pd.notna(row.get("tokens_input")) else "-",
                 str(int(row["tokens_output"])) if pd.notna(row.get("tokens_output")) else "-",
                 f"{row['cost_total']:.2f}" if pd.notna(row.get("cost_total")) else "-",
             ])
@@ -272,7 +272,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             n_execucoes=("cost_total", "count"),
             custo_total=("cost_total", "sum"),
             custo_medio=("cost_total", "mean"),
-            tokens_in_total=("tokens input", "sum"),
+            tokens_in_total=("tokens_input", "sum"),
             tokens_out_total=("tokens_output", "sum"),
         ).reset_index()
 

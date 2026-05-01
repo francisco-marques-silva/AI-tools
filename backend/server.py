@@ -807,8 +807,8 @@ def health():
 
 REPORT_JOBS: Dict[str, Dict[str, Any]] = {}
 
-_REPORT_SCRIPT  = str(_Path(__file__).resolve().parent.parent / "report" / "001_report.py")
-_GRAPHIC_SCRIPT = str(_Path(__file__).resolve().parent.parent / "report" / "graphic.py")
+_REPORT_SCRIPT  = str(_Path(__file__).resolve().parent / "report" / "main.py")
+_GRAPHIC_SCRIPT = str(_Path(__file__).resolve().parent / "report" / "graphic.py")
 
 
 def report_worker(job_id: str):
@@ -1010,4 +1010,4 @@ def report_download(job_id: str, filename: str):
 
 # Serve static frontend from current directory at root — must be last (catch-all mount)
 import pathlib as _pathlib
-app.mount("/", StaticFiles(directory=str(_pathlib.Path(__file__).parent), html=True), name="static")
+app.mount("/", StaticFiles(directory=str(_pathlib.Path(__file__).parent.parent / "frontend"), html=True), name="static")

@@ -1,5 +1,5 @@
 """
-009_fp_workarea.py — False Positives Workspace.
+fp_workarea.py — False Positives Workspace.
 
 Generates fp_workarea_YYYYMMDD_HHMMSS.xlsx in the output/ folder alongside the
 Word report and chart data.  One sheet per study (e.g. MINO, NMDA, ZEBRA).
@@ -13,23 +13,20 @@ Columns:
     Quantas_IA_FP   Number of AI runs that classified the article as FP
     IAs             Which runs, e.g. "gpt-4o (1º teste), gpt-5_2 (2º teste)"
 
-Definition of false positive (mirrors run_diagnostic in 005_analysis.py):
+Definition of false positive (mirrors run_diagnostic in analysis.py):
     FP = AI decision "maybe"  AND  Human decision "exclude"
 
-Integration: called automatically by 001_report.py via generate_fp_workarea().
-Standalone:  python report/009_fp_workarea.py
+Integration: called automatically by main.py via generate_fp_workarea().
+Standalone:  python backend/report/fp_workarea.py
 """
 
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 from openpyxl.styles import Alignment
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from report.utils import normalise_title
+from .utils import normalise_title
 
 
 # ── Column widths ─────────────────────────────────────────────────────────────
@@ -97,7 +94,7 @@ def _build_sheet_df(pn: str, projects: dict, fp_results: dict) -> pd.DataFrame:
     )
 
 
-# ── Public API (called by 001_report.py) ─────────────────────────────────────
+# ── Public API (called by main.py) ────────────────────────────────────────────
 
 def generate_fp_workarea(projects: dict, all_results: dict, output_dir: Path) -> Path:
     """
@@ -144,9 +141,11 @@ def generate_fp_workarea(projects: dict, all_results: dict, output_dir: Path) ->
 # ── Standalone entry-point ────────────────────────────────────────────────────
 
 def _run_standalone():
-    from report.constants import INPUT_DIR, OUTPUT_DIR
-    from report.file_detection import scan_input_dir, build_project_structure
-    from report.analysis import run_diagnostic
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    from backend.report.constants import INPUT_DIR, OUTPUT_DIR
+    from backend.report.file_detection import scan_input_dir, build_project_structure
+    from backend.report.analysis import run_diagnostic
 
     print(f"\nScanning: {INPUT_DIR}")
     ai_files, human_files, meta_path = scan_input_dir(INPUT_DIR)

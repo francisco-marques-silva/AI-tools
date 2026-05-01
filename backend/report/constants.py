@@ -5,8 +5,8 @@ constants.py — Paths, colors and shared configuration.
 from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────
-SCRIPT_DIR  = Path(__file__).resolve().parent
-PROJECT_DIR = SCRIPT_DIR.parent
+SCRIPT_DIR  = Path(__file__).resolve().parent          # backend/report/
+PROJECT_DIR = SCRIPT_DIR.parent.parent                 # AI-tools/
 INPUT_DIR   = PROJECT_DIR / "input"
 OUTPUT_DIR  = PROJECT_DIR / "output"
 
