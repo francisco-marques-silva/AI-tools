@@ -148,6 +148,7 @@ def build_project_structure(ai_files, human_files, metadados_path):
     metadados = None
     if metadados_path and metadados_path.is_file():
         metadados = pd.read_excel(metadados_path)
+        metadados.columns = [str(c).strip().lower().replace(" ", "_") for c in metadados.columns]
         if "project" in metadados.columns:
             metadados = metadados.dropna(subset=["project"]).reset_index(drop=True)
 

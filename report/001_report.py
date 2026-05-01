@@ -75,7 +75,7 @@ def validate_data(projects, metadados):
                     f"missing test {'st, '.join(str(m) for m in missing)}."
                 )
 
-    if metadados is not None:
+    if metadados is not None and "code" in metadados.columns:
         meta_codes = set(metadados["code"].astype(str).tolist())
         ai_codes = set()
         for proj in projects.values():
@@ -96,8 +96,12 @@ def validate_data(projects, metadados):
                 f"Codes present in metadata but without corresponding AI file: "
                 f"{', '.join(sorted(missing_in_files))}"
             )
+    elif metadados is not None:
+        issues.append(
+            "metadata.xlsx is missing a 'code' column — cost/metadata cross-checks skipped."
+        )
 
-    if metadados is not None:
+    if metadados is not None and "code" in metadados.columns and "model" in metadados.columns:
         for pn, proj in projects.items():
             for mn, model in proj["models"].items():
                 for tn2, test in model["tests"].items():

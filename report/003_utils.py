@@ -53,9 +53,17 @@ def normalise_decision(s) -> str:
     if pd.isna(s):
         return ""
     d = str(s).strip().lower()
-    if d == "included":
+    _INCLUDE = {
+        "include", "included", "incluir", "incluído", "incluido",
+        "incluso", "sim", "yes", "1", "true", "maybe", "talvez",
+    }
+    _EXCLUDE = {
+        "exclude", "excluded", "excluir", "excluído", "excluido",
+        "não", "nao", "no", "0", "false",
+    }
+    if d in _INCLUDE:
         return "include"
-    if d == "excluded":
+    if d in _EXCLUDE:
         return "exclude"
     return d
 

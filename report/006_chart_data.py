@@ -141,6 +141,8 @@ def _build_cost_vs_sensitivity(projects, all_results, metadados):
     """Sheet: cost_vs_sensitivity  —  Model, Avg_Sensitivity_pct, Avg_Cost_USD, Avg_F1."""
     if metadados is None:
         return None
+    if "code" not in metadados.columns:
+        return None
     diag = all_results.get("diagnostic", {})
     model_data = {}  # model_name -> {sens: [], cost: [], f1: []}
     for pn in sorted(projects):
@@ -178,6 +180,8 @@ def _build_cost_vs_sensitivity(projects, all_results, metadados):
 def _build_workload_reduction(projects, all_results, metadados):
     """Sheet: workload_reduction  —  Model, Human_Hours, AI_Hours, Speed_Factor."""
     if metadados is None:
+        return None
+    if "time_human" not in metadados.columns or "time_ia" not in metadados.columns:
         return None
 
     def _parse_td(val):
@@ -367,6 +371,8 @@ def _build_f1_vs_cost(projects, all_results, metadados):
     """Sheet: f1_vs_cost  —  Model, Avg_Cost_USD, Avg_F1_LF."""
     if metadados is None:
         return None
+    if "code" not in metadados.columns:
+        return None
     lf = all_results.get("listfinal", {})
     diag = all_results.get("diagnostic", {})
     model_data = {}
@@ -435,6 +441,8 @@ def _build_sens_spec_tradeoff(projects, all_results):
 def _build_model_ranking_heatmap(projects, all_results, metadados):
     """Sheet: model_ranking_heatmap  —  Model + metric columns + Overall_Score.
     Ranks models by averaging normalised metrics (higher = better)."""
+    if metadados is not None and "code" not in metadados.columns:
+        metadados = None
     diag = all_results.get("diagnostic", {})
     lf = all_results.get("listfinal", {})
     tr = all_results.get("test_retest", {})
