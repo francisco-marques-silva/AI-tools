@@ -332,7 +332,7 @@ def main():
 
     # ---- Export chart data XLSX ----
     print("  Exporting chart data XLSX...")
-    xlsx_path = export_chart_data(projects, metadados, all_results, output_dir)
+    xlsx_path = export_chart_data(projects, all_results, metadados, output_dir)
     print(f"  ✓ Chart data exported: {xlsx_path.name}")
 
     # ---- Generate FP workspace XLSX ----

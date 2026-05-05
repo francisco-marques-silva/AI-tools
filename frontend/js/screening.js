@@ -231,7 +231,7 @@ async function handleFile(file) {
           if (i === 0) opt.selected = true; sheetSelect.appendChild(opt);
         });
         sheetPickerWrap.classList.remove("hidden");
-        state.selectedSheet = wb.SheetNames[0]; loadSheetData(state.selectedSheet);
+        state.selectedSheet = wb.SheetNames[0]; loadWorkbookSheet(state.selectedSheet);
       } else {
         showError("Unsupported file type. Upload .csv, .xlsx, or .xls.");
       }
@@ -240,9 +240,9 @@ async function handleFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-sheetSelect.addEventListener("change", () => { state.selectedSheet = sheetSelect.value; loadSheetData(state.selectedSheet); });
+sheetSelect.addEventListener("change", () => { state.selectedSheet = sheetSelect.value; loadWorkbookSheet(state.selectedSheet); });
 
-function loadSheetData(name) {
+function loadWorkbookSheet(name) {
   const ws = state.workbook.Sheets[name];
   state.rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
   validateAndPreview();
@@ -251,7 +251,9 @@ function loadSheetData(name) {
 // ── Validation & preview ──────────────────────────────────────────────────────
 
 function validateAndPreview() {
-  const cols = inferColumns(state.rows);
+  const { cols, rows: normalized } = inferColumns(state.rows);
+  state.rows = normalized;
+
   const hasTitle    = cols.includes("title");
   const hasAbstract = cols.includes("abstract");
   let statusHtml = "";
@@ -261,7 +263,7 @@ function validateAndPreview() {
     statusHtml = "No rows could be read from this sheet/file.";
   } else {
     const miss = []; if (!hasTitle) miss.push("title"); if (!hasAbstract) miss.push("abstract");
-    statusHtml = `<span class="badge bad">Missing</span> Required columns not found: <code>${miss.join("</code>, <code>")}</code>.`;
+    statusHtml = `<span class="badge bad">Missing</span> Required columns not found: <code>${miss.join("</code>, <code>")}</code>. Expected: title/título/titulo and abstract/resumo/summary.`;
   }
   columnsStatus.innerHTML = statusHtml;
 

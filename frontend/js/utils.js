@@ -59,10 +59,13 @@ function decodeTextWithFallback(buffer) {
   return txt;
 }
 
-// ── Column inference (mutates state.rows) ─────────────────────────────────────
+// ── Column inference ──────────────────────────────────────────────────────────
+// Returns { cols: string[], rows: object[] }
+// cols = column names after normalisation (always includes "title"/"abstract" if found)
+// rows = normalised rows (original rows if no mapping needed)
 
 function inferColumns(rows) {
-  if (!rows.length) return [];
+  if (!rows.length) return { cols: [], rows: [] };
   const rawCols = Object.keys(rows[0]);
   const map = rawCols.reduce((a, c) => { a[c.toLowerCase().trim()] = c; return a; }, {});
   const variants = {
@@ -76,15 +79,13 @@ function inferColumns(rows) {
     }
   }
   if (chosen.title || chosen.abstract) {
-    const normalized = [];
-    for (const row of rows) {
+    const normalized = rows.map(row => {
       const r2 = { ...row };
       if (chosen.title)    r2.title    = row[chosen.title];
       if (chosen.abstract) r2.abstract = row[chosen.abstract];
-      normalized.push(r2);
-    }
-    state.rows = normalized;
-    return Object.keys(normalized[0] ?? {});
+      return r2;
+    });
+    return { cols: Object.keys(normalized[0] ?? {}), rows: normalized };
   }
-  return rawCols;
+  return { cols: rawCols, rows };
 }
