@@ -39,6 +39,109 @@
   --transition:   150ms ease;
 }
 
+/* ===== Dark mode variables ===== */
+[data-theme="dark"] {
+  --bg:            #0f1117;
+  --bg-subtle:     #171b26;
+  --card:          #1e2235;
+  --border:        #2c3356;
+  --border-hover:  #44507a;
+  --text:          #e2e6f0;
+  --text-secondary:#8b95ae;
+  --muted:         #5c6480;
+  --primary-weak:  rgba(59, 108, 231, 0.18);
+  --primary-ring:  rgba(59, 108, 231, 0.35);
+  --report-weak:   rgba(13, 148, 136, 0.15);
+  --report-border: rgba(99, 246, 228, 0.18);
+  --report-ring:   rgba(13, 148, 136, 0.35);
+  --ok-bg:         rgba(22, 163, 74, 0.14);
+  --ok-border:     rgba(187, 247, 208, 0.18);
+  --warn-bg:       rgba(202, 138, 4, 0.14);
+  --warn-border:   rgba(254, 240, 138, 0.18);
+  --bad-bg:        rgba(220, 38, 38, 0.14);
+  --bad-border:    rgba(254, 202, 202, 0.18);
+  --shadow-sm:     0 1px 3px rgba(0,0,0,.4);
+  --shadow:        0 4px 16px rgba(0,0,0,.4);
+  --shadow-lg:     0 8px 30px rgba(0,0,0,.55);
+}
+
+/* Hardcoded white overrides */
+[data-theme="dark"] input:hover,
+[data-theme="dark"] select:hover,
+[data-theme="dark"] textarea:hover { background: #252a42; }
+[data-theme="dark"] input:focus,
+[data-theme="dark"] select:focus,
+[data-theme="dark"] textarea:focus { background: #252a42; }
+
+/* Select chevron in dark mode */
+[data-theme="dark"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b95ae' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 5.5l6.5 6 6.5-6'/%3E%3C/svg%3E");
+}
+
+/* Table header */
+[data-theme="dark"] thead th { background: rgba(59,108,231,0.18); }
+[data-theme="dark"] tbody tr:hover { background: rgba(255,255,255,0.04); }
+
+/* Tabs active backgrounds */
+[data-theme="dark"] #tab-r-fulltext:checked ~ .tab-nav label[for="tab-r-fulltext"] { background: rgba(99,102,241,0.18); }
+[data-theme="dark"] #tab-r-rob:checked ~ .tab-nav label[for="tab-r-rob"] { background: rgba(217,119,6,0.18); }
+
+/* Pane headers */
+[data-theme="dark"] .pane-header-screening {
+  background: linear-gradient(135deg, rgba(59,108,231,0.16) 0%, rgba(59,108,231,0.08) 100%);
+  border-color: rgba(59,108,231,0.3);
+}
+[data-theme="dark"] .pane-header-report {
+  background: linear-gradient(135deg, rgba(13,148,136,0.16) 0%, rgba(13,148,136,0.08) 100%);
+  border-color: rgba(13,148,136,0.3);
+}
+
+/* WIP badge */
+[data-theme="dark"] .wip-badge {
+  background: rgba(245,158,11,0.14);
+  color: #fbbf24;
+  border-color: rgba(251,191,36,0.22);
+}
+
+/* Chart card images — keep white background for chart readability */
+[data-theme="dark"] .chart-card img { background: #fff; }
+[data-theme="dark"] .lightbox-content img { background: #fff; }
+
+/* How-to badge */
+[data-theme="dark"] .how-to-badge { border-color: rgba(59,108,231,0.3); }
+
+/* Naming/summary backgrounds */
+[data-theme="dark"] .naming-guide > summary { background: var(--bg-subtle); }
+[data-theme="dark"] .naming-table th { background: rgba(59,108,231,0.18); }
+[data-theme="dark"] .meta-table thead th { background: rgba(59,108,231,0.18); }
+[data-theme="dark"] .meta-table tbody tr:hover { background: rgba(255,255,255,0.04); }
+
+/* Provider btn active tint */
+[data-theme="dark"] .provider-btn.active {
+  background: rgba(59,108,231,0.14);
+}
+
+/* Dark mode toggle button */
+.btn-dark-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+.btn-dark-toggle:hover {
+  background: var(--primary-weak);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 /* ===== Reset ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }

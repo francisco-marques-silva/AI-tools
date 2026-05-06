@@ -36,9 +36,32 @@ document.querySelectorAll('.tab-radio').forEach(r => {
   r.addEventListener('change', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 });
 
+// ── Dark mode ────────────────────────────────────────────────────────────────
+
+function applyTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  const moon = document.getElementById('iconMoon');
+  const sun  = document.getElementById('iconSun');
+  if (moon) moon.classList.toggle('hidden', dark);
+  if (sun)  sun.classList.toggle('hidden', !dark);
+}
+
 // ── Init on load ──────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Dark mode
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  applyTheme(isDark);
+  const btnDark = document.getElementById('btnDarkMode');
+  if (btnDark) {
+    btnDark.addEventListener('click', () => {
+      const nowDark = document.documentElement.getAttribute('data-theme') !== 'dark';
+      localStorage.setItem('theme', nowDark ? 'dark' : 'light');
+      applyTheme(nowDark);
+    });
+  }
+
+  // Restore saved field values
   const restoreIds = [
     "modelSelect", "modelSelectClaude", "modelSelectGoogle",
     "studySynopsis",
