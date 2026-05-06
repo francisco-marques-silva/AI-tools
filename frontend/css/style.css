@@ -58,9 +58,11 @@ body {
 .tab-radio { display: none; }
 .tab-pane { display: none; }
 #tab-r-screening:checked ~ main #pane-screening { display: block; }
-#tab-r-report:checked ~ main #pane-report { display: block; }
+#tab-r-fulltext:checked  ~ main #pane-fulltext  { display: block; }
+#tab-r-rob:checked       ~ main #pane-rob       { display: block; }
+#tab-r-report:checked    ~ main #pane-report    { display: block; }
 
-/* Active tab — Screening (blue) */
+/* Active tab — Screening TIAB (blue) */
 #tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"] {
   color: var(--primary);
   border-bottom-color: var(--primary);
@@ -68,6 +70,28 @@ body {
 }
 #tab-r-screening:checked ~ .tab-nav label[for="tab-r-screening"] .tab-btn-sub {
   color: var(--primary);
+  opacity: 0.75;
+}
+
+/* Active tab — Texto Completo (indigo) */
+#tab-r-fulltext:checked ~ .tab-nav label[for="tab-r-fulltext"] {
+  color: #6366f1;
+  border-bottom-color: #6366f1;
+  background: #eef2ff;
+}
+#tab-r-fulltext:checked ~ .tab-nav label[for="tab-r-fulltext"] .tab-btn-sub {
+  color: #6366f1;
+  opacity: 0.75;
+}
+
+/* Active tab — Risco de Viés (amber) */
+#tab-r-rob:checked ~ .tab-nav label[for="tab-r-rob"] {
+  color: #d97706;
+  border-bottom-color: #d97706;
+  background: #fffbeb;
+}
+#tab-r-rob:checked ~ .tab-nav label[for="tab-r-rob"] .tab-btn-sub {
+  color: #d97706;
   opacity: 0.75;
 }
 
@@ -81,6 +105,75 @@ body {
   color: var(--report-color);
   opacity: 0.75;
 }
+
+/* ===== WIP pane ===== */
+.wip-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 80px 24px;
+  gap: 16px;
+}
+.wip-icon {
+  color: var(--muted);
+  opacity: 0.55;
+  margin-bottom: 4px;
+}
+.wip-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+.wip-badge::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+  animation: wip-pulse 1.6s ease-in-out infinite;
+}
+@keyframes wip-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.75); }
+}
+.wip-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.wip-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 520px;
+  line-height: 1.7;
+}
+.wip-features {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: flex-start;
+}
+.wip-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.wip-feature-item svg { color: var(--ok); flex-shrink: 0; }
 
 /* ===== Top Bar ===== */
 .topbar {

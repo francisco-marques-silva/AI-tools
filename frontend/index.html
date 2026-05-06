@@ -38,6 +38,8 @@
 
   <!-- CSS tab system: radio inputs must precede nav and main in the DOM -->
   <input type="radio" id="tab-r-screening" name="app-tab" class="tab-radio" checked>
+  <input type="radio" id="tab-r-fulltext" name="app-tab" class="tab-radio">
+  <input type="radio" id="tab-r-rob" name="app-tab" class="tab-radio">
   <input type="radio" id="tab-r-report" name="app-tab" class="tab-radio">
 
   <!-- ===== TAB NAV ===== -->
@@ -46,8 +48,22 @@
       <label class="tab-btn" for="tab-r-screening">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         <span class="tab-btn-text">
-          <span class="tab-btn-title">Screening</span>
+          <span class="tab-btn-title">Screening TIAB</span>
           <span class="tab-btn-sub">AI title/abstract screening</span>
+        </span>
+      </label>
+      <label class="tab-btn" for="tab-r-fulltext">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="12" y1="21" x2="12" y2="21"/></svg>
+        <span class="tab-btn-text">
+          <span class="tab-btn-title">Texto Completo</span>
+          <span class="tab-btn-sub">Full-text screening</span>
+        </span>
+      </label>
+      <label class="tab-btn" for="tab-r-rob">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span class="tab-btn-text">
+          <span class="tab-btn-title">Risco de Viés</span>
+          <span class="tab-btn-sub">Risk of bias assessment</span>
         </span>
       </label>
       <label class="tab-btn" for="tab-r-report">
@@ -474,6 +490,58 @@
     </section>
 
   </div><!-- /pane-screening -->
+
+  <!-- ===== FULL-TEXT PANE ===== -->
+  <div id="pane-fulltext" class="tab-pane" role="tabpanel">
+    <div class="wip-pane">
+      <div class="wip-icon">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      </div>
+      <span class="wip-badge">Em Produção</span>
+      <h2 class="wip-title">Screening de Texto Completo</h2>
+      <p class="wip-desc">O módulo de screening de texto completo está em desenvolvimento.<br>Em breve você poderá enviar os PDFs dos artigos incluídos no TIAB e obter decisões detalhadas de inclusão/exclusão com base no texto integral.</p>
+      <div class="wip-features">
+        <div class="wip-feature-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Upload de PDFs em lote
+        </div>
+        <div class="wip-feature-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Leitura e extração automática de texto
+        </div>
+        <div class="wip-feature-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Decisão com justificativa por critério
+        </div>
+      </div>
+    </div>
+  </div><!-- /pane-fulltext -->
+
+  <!-- ===== RISK OF BIAS PANE ===== -->
+  <div id="pane-rob" class="tab-pane" role="tabpanel">
+    <div class="wip-pane">
+      <div class="wip-icon">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <span class="wip-badge">Em Produção</span>
+      <h2 class="wip-title">Análise de Risco de Viés</h2>
+      <p class="wip-desc">O módulo de avaliação de risco de viés está em desenvolvimento.<br>Em breve você poderá analisar estudos com ferramentas padronizadas como RoB 2, SYRCLE e ROBINS-I, assistidas por IA.</p>
+      <div class="wip-features">
+        <div class="wip-feature-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Suporte a RoB 2, SYRCLE e ROBINS-I
+        </div>
+        <div class="wip-feature-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Avaliação domínio a domínio por IA
+        </div>
+        <div class="wip-feature-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Gráficos de semáforo e sumário
+        </div>
+      </div>
+    </div>
+  </div><!-- /pane-rob -->
 
   <!-- ===== REPORT PANE ===== -->
   <div id="pane-report" class="tab-pane" role="tabpanel">
