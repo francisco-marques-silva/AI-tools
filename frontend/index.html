@@ -285,6 +285,14 @@
         <span id="fileMeta"></span>
       </div>
 
+      <div class="output-name-wrap">
+        <label class="field inline-field">
+          <span>Output filename</span>
+          <input id="outputFilename" type="text" placeholder="screening_result" />
+          <span class="output-ext-label">.csv / .xlsx</span>
+        </label>
+      </div>
+
       <div id="sheetPickerWrap" class="hidden">
         <label class="field inline-field">
           <span>Sheet</span>
@@ -332,6 +340,7 @@
     <section id="payloadCard" class="card hidden">
       <div class="payload-header">
         <h2 class="card-title">JSON Payload</h2>
+        <button id="btnCollapsePayload" class="btn btn-ghost">Collapse</button>
         <button id="btnCopy" class="btn btn-ghost">Copy</button>
       </div>
       <pre id="payloadOut" class="code"></pre>
@@ -348,6 +357,7 @@
         <div id="progressBar" class="progress-bar" style="width:0%"></div>
       </div>
       <div id="progressLabel" class="progress-label">Awaiting…</div>
+      <div id="elapsedLabel" class="progress-elapsed hidden"></div>
 
       <div class="progress-actions">
         <button id="btnCancel" class="btn btn-danger">Cancel</button>

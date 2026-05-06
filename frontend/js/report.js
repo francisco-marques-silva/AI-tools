@@ -71,6 +71,32 @@ btnClearReport.addEventListener('click', () => {
 
 // ── Chart gallery ──────────────────────────────────────────────────────────────
 
+// Global tooltip element for chart info buttons
+const _chartGlobalTip = document.createElement('div');
+_chartGlobalTip.className = 'chart-global-tip hidden';
+document.body.appendChild(_chartGlobalTip);
+
+function _setupChartInfoBtn(btn, text) {
+  btn.addEventListener('mouseenter', () => {
+    _chartGlobalTip.textContent = text;
+    _chartGlobalTip.style.visibility = 'hidden';
+    _chartGlobalTip.style.top = '0px';
+    _chartGlobalTip.style.left = '0px';
+    _chartGlobalTip.classList.remove('hidden');
+    const r = btn.getBoundingClientRect();
+    const h = _chartGlobalTip.offsetHeight;
+    const w = 280;
+    let left = r.left + r.width / 2 - w / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    let top = r.top - h - 8;
+    if (top < 8) top = r.bottom + 8;
+    _chartGlobalTip.style.left = `${left}px`;
+    _chartGlobalTip.style.top = `${top}px`;
+    _chartGlobalTip.style.visibility = '';
+  });
+  btn.addEventListener('mouseleave', () => _chartGlobalTip.classList.add('hidden'));
+}
+
 const CHART_LABELS = {
   'sensitivity_per_model_per_project':   'Sensitivity by Model per Project',
   'listfinal_capture_heatmap':           'Listfinal Capture Rate Heatmap',
@@ -90,6 +116,25 @@ const CHART_LABELS = {
   'model_ranking_heatmap':               'Model Ranking Heatmap',
 };
 
+const CHART_TOOLTIPS = {
+  'sensitivity_per_model_per_project':   'Shows the sensitivity (recall) of each AI model per project. Sensitivity = proportion of human-included articles that the AI also kept. Higher is better; 1.0 means no relevant article was missed.',
+  'listfinal_capture_heatmap':           'Heatmap of Listfinal capture rate by model and project. Each cell shows what percentage of the final included articles (gold standard) the AI retained. Values near 100% indicate the AI missed very few relevant articles.',
+  'test_retest_kappa':                   "Cohen's Kappa measuring consistency between two runs of the same AI model (test-retest reliability). Values ≥ 0.81 = almost perfect, ≥ 0.61 = substantial. Error bars show 95% confidence intervals.",
+  'model_comparison_radar':              'Radar chart comparing models across key dimensions: Sensitivity (based on Listfinal capture), Specificity, F1 Score, Fulltext Capture, and Test-Retest Kappa. Each axis ranges 0–1. A larger filled area means more balanced performance.',
+  'cost_vs_sensitivity_bubble':          'Cost (USD) vs. Sensitivity per model. Bubble size = F1 Score. Ideal models appear upper-left: high sensitivity at low cost. The dashed line marks 95% sensitivity.',
+  'workload_reduction':                  'Compares human review time vs. AI time for the same task. Speed Factor = Human Hours ÷ AI Hours. A factor of 10× means the AI finished in 1/10th the time.',
+  'efficiency_frontier_grid':            'Each point = one AI run. X-axis: share of articles flagged as positive by AI (lower = more selective). Y-axis: Listfinal capture rate. Points in the upper-left corner are most efficient.',
+  'efficiency_frontier_by_project_avg':  'Same as Efficiency Frontier but averaged per project, reducing noise from individual runs.',
+  'efficiency_frontier_averaged':        'Overall efficiency frontier averaged across all projects and runs. Gives a high-level view of each model\'s screening efficiency.',
+  'efficiency_score_by_project':         'Efficiency score broken down by project. Efficiency = Capture Rate × (1 − AI Positive Rate). Higher = captures more relevant articles while excluding more irrelevant ones.',
+  'efficiency_score_aggregated':         'Aggregated efficiency score per model, averaged across all projects. Error bars show standard deviation. Useful for ranking models by overall efficiency.',
+  'sensitivity_specificity_dual_gold':   'Compares sensitivity and specificity using two gold standards: TIAB (human title/abstract decisions) and Listfinal (final included articles). Reveals how model performance differs at each review phase.',
+  'aggregated_performance_metrics':      'Summary of all key metrics per model: Sensitivity, Specificity, F1 Score, Accuracy, Listfinal Capture, and Test-Retest Kappa. Allows fast cross-model comparison across all dimensions.',
+  'f1_score_vs_cost':                    'F1 Score vs. total cost (USD) per model. F1 balances precision and recall. Models in the upper-left offer the best quality-per-dollar ratio.',
+  'sensitivity_specificity_tradeoff':    'Trade-off between sensitivity and specificity for each model and project. High sensitivity often costs lower specificity (more false positives). This reveals each model\'s operating point.',
+  'model_ranking_heatmap':               'Heatmap ranking all models across multiple metrics. Color intensity = performance level. The Overall Score column aggregates all metrics into a single ranking.',
+};
+
 function chartLabel(filename) {
   const key = filename.replace(/\.png$/, '');
   return CHART_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -101,13 +146,25 @@ function renderChartsGallery(jobId, chartFiles) {
   grid.innerHTML = chartFiles.map(fname => {
     const label = chartLabel(fname);
     const src = `/api/report/chart/${jobId}/${encodeURIComponent(fname)}`;
+    const key = fname.replace(/\.png$/, '');
+    const hasTip = !!CHART_TOOLTIPS[key];
     return `<div class="chart-card" data-src="${src}" data-label="${label}">
       <img src="${src}" alt="${label}" loading="lazy" />
-      <p class="chart-label">${label}</p>
+      <div class="chart-footer">
+        <p class="chart-label">${label}</p>
+        ${hasTip ? `<button class="chart-info-btn" data-key="${key}" aria-label="Chart information" tabindex="0">ℹ</button>` : ''}
+      </div>
     </div>`;
   }).join('');
   grid.querySelectorAll('.chart-card').forEach(card => {
-    card.addEventListener('click', () => openLightbox(card.dataset.src, card.dataset.label));
+    card.addEventListener('click', e => {
+      if (e.target.closest('.chart-info-btn')) return;
+      openLightbox(card.dataset.src, card.dataset.label);
+    });
+  });
+  grid.querySelectorAll('.chart-info-btn').forEach(btn => {
+    const text = CHART_TOOLTIPS[btn.dataset.key] || '';
+    if (text) _setupChartInfoBtn(btn, text);
   });
 }
 

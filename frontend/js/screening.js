@@ -207,6 +207,8 @@ async function ensureXLSX() {
 async function handleFile(file) {
   state.filename = file.name;
   fileMeta.textContent = `${file.name} • ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+  const outEl = document.getElementById("outputFilename");
+  if (outEl) outEl.value = file.name.replace(/\.[^.]+$/, "");
   const reader = new FileReader();
   reader.onload = async evt => {
     try {
@@ -352,8 +354,18 @@ document.getElementById("btnGenerate").addEventListener("click", () => {
   try {
     const payload = buildPayload();
     document.getElementById("payloadOut").textContent = JSON.stringify(payload, null, 2);
+    document.getElementById("payloadOut").classList.remove("hidden");
+    const btnCP = document.getElementById("btnCollapsePayload");
+    if (btnCP) btnCP.textContent = "Collapse";
     document.getElementById("payloadCard").classList.remove("hidden");
   } catch (e) { showError(e.message); }
+});
+
+document.getElementById("btnCollapsePayload").addEventListener("click", () => {
+  const pre = document.getElementById("payloadOut");
+  const btn = document.getElementById("btnCollapsePayload");
+  const collapsed = pre.classList.toggle("hidden");
+  btn.textContent = collapsed ? "Expand" : "Collapse";
 });
 
 document.getElementById("btnCopy").addEventListener("click", async () => {
@@ -398,6 +410,7 @@ document.getElementById("btnClear").addEventListener("click", () => {
   state.workbook = null; state.filename = null; state.selectedSheet = null; state.rows = [];
   const fi = document.getElementById("fileInput"); if (fi) fi.value = "";
   fileMeta.textContent = "";
+  const outEl2 = document.getElementById("outputFilename"); if (outEl2) outEl2.value = "";
   sheetPickerWrap.classList.add("hidden");
   columnsStatus.textContent = "Waiting for file...";
   previewTable.querySelector("thead").innerHTML = "";
@@ -420,10 +433,35 @@ function showProgress(jobId) {
   const btnRestart  = document.getElementById("btnRestart");
   const liveLog     = document.getElementById("liveLog");
   const btnToggleLog= document.getElementById("btnToggleLog");
+  const elapsedEl   = document.getElementById("elapsedLabel");
+
+  let elapsedInterval = null;
+  let elapsedStart = null;
+
+  function startElapsed() {
+    if (elapsedInterval || !elapsedEl) return;
+    elapsedStart = Date.now();
+    elapsedEl.classList.remove("hidden");
+    elapsedEl.textContent = "Time elapsed: 0s";
+    elapsedInterval = setInterval(() => {
+      const s = Math.floor((Date.now() - elapsedStart) / 1000);
+      const m = Math.floor(s / 60);
+      elapsedEl.textContent = m > 0 ? `Time elapsed: ${m}m ${s % 60}s` : `Time elapsed: ${s}s`;
+    }, 1000);
+  }
+  function stopElapsed() {
+    if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+    if (elapsedEl && elapsedStart) {
+      const s = Math.floor((Date.now() - elapsedStart) / 1000);
+      const m = Math.floor(s / 60);
+      elapsedEl.textContent = `Total analysis time: ${m > 0 ? `${m}m ${s % 60}s` : `${s}s`}`;
+    }
+  }
 
   card.classList.remove("hidden"); link.classList.add("hidden");
   if (linkX) linkX.classList.add("hidden");
   bar.style.width = "0%"; label.textContent = "Starting...";
+  if (elapsedEl) { elapsedEl.textContent = ""; elapsedEl.classList.add("hidden"); }
   if (liveLog) { liveLog.textContent = ""; liveLog.classList.add("hidden"); }
   if (btnToggleLog) {
     btnToggleLog.textContent = "Show live log";
@@ -468,6 +506,7 @@ function showProgress(jobId) {
     try {
       const data = JSON.parse(ev.data);
       const processed = data.processed || 0; const total = data.total || 0;
+      if (!elapsedStart && processed > 0) startElapsed();
       const pct = total ? Math.floor((processed / total) * 100) : 0;
       bar.style.width = `${pct}%`;
       let concLabel = "";
@@ -478,21 +517,23 @@ function showProgress(jobId) {
       }
       label.textContent = `Processed ${processed} of ${total} (${pct}%)${concLabel}`;
       if (data.status === "done") {
-        es.close(); stopPolling();
+        es.close(); stopPolling(); stopElapsed();
         label.textContent = `Completed: ${processed} of ${total} (100%)`;
-        link.href = `/api/result/${jobId}`; link.classList.remove("hidden");
-        if (linkX) { linkX.href = `/api/result/${jobId}?format=xlsx`; linkX.classList.remove("hidden"); }
+        const outEl = document.getElementById("outputFilename");
+        const baseName = (outEl?.value?.trim() || "screening_result").replace(/[/\\?%*:|"<>]/g, "_");
+        link.href = `/api/result/${jobId}`; link.download = `${baseName}.csv`; link.classList.remove("hidden");
+        if (linkX) { linkX.href = `/api/result/${jobId}?format=xlsx`; linkX.download = `${baseName}.xlsx`; linkX.classList.remove("hidden"); }
         if (btnCancel) btnCancel.disabled = true;
         if (btnRestart) btnRestart.classList.remove("hidden");
       }
       if (data.status === "cancelled") {
-        es.close(); stopPolling();
+        es.close(); stopPolling(); stopElapsed();
         label.textContent = `Cancelled at ${processed} of ${total}`;
         link.classList.add("hidden"); if (linkX) linkX.classList.add("hidden");
         if (btnCancel) btnCancel.disabled = true;
         if (btnRestart) btnRestart.classList.remove("hidden");
       }
-      if (data.status === "error") { es.close(); stopPolling(); showError("Backend reported an error (check server logs)."); if (btnCancel) btnCancel.disabled = true; }
+      if (data.status === "error") { es.close(); stopPolling(); stopElapsed(); showError("Backend reported an error (check server logs)."); if (btnCancel) btnCancel.disabled = true; }
     } catch {}
   };
   es.onerror = () => showError("Lost connection to backend while streaming progress. Is the server running?");

@@ -83,47 +83,49 @@ def _build_test_retest_kappa(projects, all_results):
 
 
 def _build_model_comparison_radar(projects, all_results):
-    """Sheet: model_comparison_radar  —  Model + metric columns (0-1 scale)."""
-    diag = all_results.get("diagnostic", {})
+    """Sheet: model_comparison_radar  —  Model + metric columns (0-1 scale).
+
+    Sensitivity is based on Listfinal capture rate (not TIAB diagnostic),
+    making this chart reflect final-inclusion quality rather than TIAB agreement.
+    """
     lf = all_results.get("listfinal", {})
     tr = all_results.get("test_retest", {})
     ft = all_results.get("fulltext", {})
+    diag = all_results.get("diagnostic", {})
 
-    # Gather per-model averages across all projects and tests
-    model_agg = {}  # model_name -> {metric: [values]}
+    model_agg = {}
     for pn in sorted(projects):
         proj = projects[pn]
         for mn in sorted(proj["models"]):
             mname = proj["models"][mn]["name"]
             if mname not in model_agg:
                 model_agg[mname] = {
-                    "Sensitivity": [], "Specificity": [], "F1": [],
-                    "Kappa_TIAB": [], "LF_Capture": [], "FT_Capture": [],
-                    "Test_Retest_Kappa": [],
+                    "Sens_Listfinal": [], "Specificity": [], "F1": [],
+                    "FT_Capture": [], "Test_Retest_Kappa": [],
                 }
-            for tn, r in diag.get(pn, {}).get(mn, {}).items():
-                if r is None:
-                    continue
-                m = r["metrics"]
-                for k, mk in [("Sensitivity", "Sensitivity"), ("Specificity", "Specificity"),
-                               ("F1", "F1 Score"), ("Kappa_TIAB", None)]:
-                    if mk:
-                        v = m[mk]
-                    else:
-                        v = r["kappa"]
-                    if not np.isnan(v):
-                        model_agg[mname][k].append(v)
 
+            # Sensitivity from Listfinal capture rate (primary quality measure)
             for tn in lf.get(pn, {}).get(mn, {}):
                 v = lf[pn][mn][tn]["capture_rate"]
                 if v is not None and not np.isnan(v):
-                    model_agg[mname]["LF_Capture"].append(v)
+                    model_agg[mname]["Sens_Listfinal"].append(v)
 
+            # Specificity and F1 from diagnostic (best available proxy)
+            for tn, r in diag.get(pn, {}).get(mn, {}).items():
+                if r is None:
+                    continue
+                for k, mk in [("Specificity", "Specificity"), ("F1", "F1 Score")]:
+                    v = r["metrics"][mk]
+                    if not np.isnan(v):
+                        model_agg[mname][k].append(v)
+
+            # Fulltext capture rate
             for tn in ft.get(pn, {}).get(mn, {}):
                 v = ft[pn][mn][tn]["capture_rate"]
                 if v is not None and not np.isnan(v):
                     model_agg[mname]["FT_Capture"].append(v)
 
+            # Test-retest kappa
             tr_r = tr.get(pn, {}).get(mn)
             if tr_r and not np.isnan(tr_r["kappa"]):
                 model_agg[mname]["Test_Retest_Kappa"].append(tr_r["kappa"])
