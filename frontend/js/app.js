@@ -5,6 +5,7 @@ const state = {
   filename: null,
   selectedSheet: null,
   rows: [],
+  provider: "openai",
 };
 
 // ── Preferences ───────────────────────────────────────────────────────────────
@@ -12,14 +13,14 @@ const state = {
 const savePref = debounce((id, value) => localStorage.setItem(id, value), 200);
 
 [
-  "modelSelect",
+  "modelSelect", "modelSelectClaude", "modelSelectGoogle",
   "studySynopsis",
   "inclusionCriteria",
   "exclusionCriteria",
-  "apiKey",
+  "apiKey", "apiKeyClaude", "apiKeyGoogle",
   "verbosity", "reasoningEffort",
-  "temperature",
-  "tierSelect",
+  "temperature", "temperatureClaude", "temperatureGoogle",
+  "tierSelect", "tierSelectClaude", "tierSelectGoogle",
   "adv_concurrent", "adv_concurrent_max", "adv_concurrent_min",
   "adv_record_retries", "adv_aiup_after", "adv_max_retries", "adv_base_backoff",
 ].forEach(id => {
@@ -38,17 +39,15 @@ document.querySelectorAll('.tab-radio').forEach(r => {
 // ── Init on load ──────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
-  const savedModel = localStorage.getItem("modelSelect");
-  const savedStudy = localStorage.getItem("studySynopsis");
-  const savedKey   = localStorage.getItem("apiKey");
-
-  if (savedModel) { const el = document.getElementById("modelSelect"); if (el) el.value = savedModel; }
-  if (savedStudy) { const el = document.getElementById("studySynopsis"); if (el) el.value = savedStudy; }
-  if (savedKey)   { const el = document.getElementById("apiKey");        if (el) el.value = savedKey; }
-
-  const paramIds = ["verbosity", "reasoningEffort", "temperature"];
-  paramIds.forEach(id => {
-    const v  = localStorage.getItem(id);
+  const restoreIds = [
+    "modelSelect", "modelSelectClaude", "modelSelectGoogle",
+    "studySynopsis",
+    "apiKey", "apiKeyClaude", "apiKeyGoogle",
+    "verbosity", "reasoningEffort",
+    "temperature", "temperatureClaude", "temperatureGoogle",
+  ];
+  restoreIds.forEach(id => {
+    const v = localStorage.getItem(id);
     const el = document.getElementById(id);
     if (el && v != null) el.value = v;
   });
@@ -61,5 +60,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   addParamTooltips();
   initCriteriaLists();
+  initProviderSelector();
   initAdvancedSettings();
 });

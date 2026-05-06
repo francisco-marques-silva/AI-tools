@@ -258,6 +258,53 @@ select {
   padding-right: 32px;
 }
 
+/* Provider selector */
+.provider-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.provider-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: inherit;
+}
+.provider-btn:hover {
+  border-color: var(--primary);
+  background: var(--surface-1);
+}
+.provider-btn.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.provider-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #fff;
+}
+.openai-badge  { background: #10a37f; }
+.claude-badge  { background: #d97706; }
+.gemini-badge  { background: #4f46e5; }
+.provider-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.provider-btn.active .provider-name { color: var(--primary); }
+.provider-config.hidden { display: none; }
+
 /* Parameters */
 .param-group { margin-top: 8px; }
 .param-row {

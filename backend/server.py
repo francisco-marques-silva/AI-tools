@@ -21,6 +21,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 import requests
 
+from backend.providers import call_llm, RateLimitError, env_key_for
+
 
 load_dotenv()
 
@@ -35,6 +37,7 @@ app.add_middleware(
 
 
 class StartPayload(BaseModel):
+    provider: str = "openai"
     model: str = Field(default="gpt-5")
     api_key: str | None = None
     study_synopsis: str
@@ -59,13 +62,6 @@ CONCURRENT_MAX     = int(os.getenv("CONCURRENT_MAX",     "40"))  # Tier 3 ceilin
 CONCURRENT_MIN     = int(os.getenv("CONCURRENT_MIN",     "2"))   # never drop below 2 even on 429s
 RECORD_MAX_RETRIES = int(os.getenv("RECORD_MAX_RETRIES", "3"))   # per-record retry attempts on error
 AIUP_AFTER         = int(os.getenv("AIUP_AFTER",         "5"))   # successes before +1 slot (faster ramp for Tier 3)
-
-
-class RateLimitError(RuntimeError):
-    """Raised by call_openai_chat when the API returns HTTP 429."""
-    def __init__(self, message: str, retry_after: float = 0.0):
-        super().__init__(message)
-        self.retry_after = retry_after  # seconds suggested by the API header
 
 
 class AdaptiveSemaphore:
@@ -189,199 +185,13 @@ def build_prompt(synopsis: str, inc: List[str], exc: List[str], title: str, abst
     return "\n".join(parts)
 
 
-def call_openai_chat(model: str, prompt: str, api_key: str, params: Optional[Dict[str, Any]] = None,
-                     max_retries: int = MAX_RETRIES, base_backoff: float = BASE_BACKOFF) -> Dict[str, Any]:
-    is_reasoning = model.startswith("gpt-5")
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    # Build request target/body depending on model family
-    if is_reasoning:
-        url = "https://api.openai.com/v1/responses"
-        base_body: Dict[str, Any] = {"model": model, "input": prompt}
-        if params:
-            if params.get("reasoning_effort"):
-                base_body["reasoning"] = {"effort": params["reasoning_effort"]}
-            if params.get("verbosity"):
-                base_body["text"] = {"verbosity": params["verbosity"]}
-    else:
-        url = "https://api.openai.com/v1/chat/completions"
-        base_body: Dict[str, Any] = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "You return only strict JSON and nothing else."},
-                {"role": "user", "content": prompt},
-            ],
-        }
-        if params and "temperature" in params:
-            base_body["temperature"] = float(params["temperature"])
-
-    # Perform request with retries and exponential backoff (handles 5xx)
-    r = None
-    for attempt in range(1, max_retries + 1):
-        r = requests.post(url, headers=headers, json=base_body, timeout=60)
-        if r.status_code == 200:
-            break
-        if r.status_code == 429:
-            # Raise immediately so the AdaptiveSemaphore can react and reduce concurrency.
-            ra_header = r.headers.get("Retry-After", "")
-            try:
-                retry_after = float(ra_header)
-            except (TypeError, ValueError):
-                retry_after = 0.0
-            raise RateLimitError(
-                f"HTTP 429 rate-limited (Retry-After={retry_after:.1f}s)",
-                retry_after=retry_after,
-            )
-        # Transient server errors: retry with backoff
-        if r.status_code in (500, 502, 503, 504):
-            jitter = random.uniform(0, 0.25)
-            sleep_s = base_backoff * (2 ** (attempt - 1)) + jitter
-            time.sleep(min(sleep_s, 20.0))
-            continue
-        # Other errors: do not retry further
-        break
-    if r is None or r.status_code != 200:
-        raise RuntimeError(f"OpenAI error {r.status_code if r else 'no_response'}: {r.text[:200] if r else ''}")
-    data = r.json()
-    # Extract assistant text depending on API used
-    content: Optional[str] = None
-    def deep_extract_text(obj) -> Optional[str]:
-        try:
-            from collections import deque
-            q = deque([obj])
-            while q:
-                node = q.popleft()
-                if isinstance(node, dict):
-                    # direct output_text
-                    ot = node.get("output_text")
-                    if isinstance(ot, str) and ot.strip():
-                        return ot.strip()
-                    # Responses content blocks
-                    txt = node.get("text")
-                    if isinstance(txt, dict):
-                        val = txt.get("value")
-                        if isinstance(val, str) and val.strip():
-                            return val.strip()
-                    if isinstance(txt, str) and txt.strip():
-                        return txt.strip()
-                    cont = node.get("content")
-                    if isinstance(cont, str) and cont.strip():
-                        return cont.strip()
-                    for v in node.values():
-                        q.append(v)
-                elif isinstance(node, list):
-                    q.extend(node)
-        except Exception:
-            return None
-        return None
-    if is_reasoning:
-        # Responses API. Prefer 'output_text'; otherwise dig into 'output' items.
-        resp_obj = data.get("response") or data
-        ot = resp_obj.get("output_text") or data.get("output_text")
-        if isinstance(ot, str) and ot.strip():
-            content = ot.strip()
-        if not content:
-            try:
-                for item in (resp_obj.get("output") or data.get("output") or []):
-                    for part in (item.get("content") or []):
-                        if isinstance(part, dict):
-                            # Newer schema: part = { type: 'output_text', text: { value: '...' } }
-                            txt = None
-                            if isinstance(part.get("text"), dict):
-                                txt = part.get("text", {}).get("value")
-                            elif isinstance(part.get("text"), str):
-                                txt = part.get("text")
-                            if isinstance(txt, str) and txt.strip():
-                                content = txt.strip()
-                                break
-                    if content:
-                        break
-            except Exception:
-                content = None
-    else:
-        # Chat Completions
-        try:
-            content = data["choices"][0]["message"]["content"].strip()
-        except Exception:
-            # Fallback for rare structures (e.g., text field)
-            try:
-                content = data["choices"][0].get("text", "").strip()
-            except Exception:
-                content = None
-    if not content:
-        # last-resort: deep search
-        content = deep_extract_text(data)
-    if not content:
-        raise RuntimeError(f"Invalid OpenAI response structure (keys={list(data.keys())[:10]})")
-    # Strip code fences if present
-    if content.startswith("```"):
-        content = content.strip("`")
-        if "\n" in content:
-            content = content.split("\n", 1)[1].strip()
-    try:
-        parsed = json.loads(content)
-    except Exception:
-        # Raise so that the per-record retry loop can attempt again.
-        # Include a snippet of the raw content for diagnostics.
-        raise RuntimeError(f"JSON parse error – raw content snippet: {content[:120]!r}")
-    decision = str(parsed.get("decision", "")).strip().lower()
-    rationale = str(parsed.get("rationale", "")).strip()
-    # Optional per-criterion evaluations
-    def coerce_eval(arr: Any) -> List[Dict[str, str]]:
-        out: List[Dict[str, str]] = []
-        if isinstance(arr, str):
-            try:
-                arr = json.loads(arr)
-            except Exception:
-                arr = []
-        if isinstance(arr, list):
-            for it in arr:
-                if isinstance(it, dict):
-                    crit = str(it.get("criterion", "")).strip()
-                    status = str(it.get("status", "")).strip().lower()
-                    if status not in {"met", "unclear", "unmet"}:
-                        status = "unclear"
-                    if crit:
-                        out.append({"criterion": crit, "status": status})
-                elif isinstance(it, (list, tuple)) and len(it) >= 2:
-                    crit = str(it[0]).strip()
-                    status = str(it[1]).strip().lower()
-                    if status not in {"met", "unclear", "unmet"}:
-                        status = "unclear"
-                    if crit:
-                        out.append({"criterion": crit, "status": status})
-        return out
-    inc_eval = coerce_eval(
-        parsed.get("inclusion_evaluation")
-        or parsed.get("inclusionEvaluations")
-        or parsed.get("inclusion")
-        or []
-    )
-    exc_eval = coerce_eval(
-        parsed.get("exclusion_evaluation")
-        or parsed.get("exclusionEvaluations")
-        or parsed.get("exclusion")
-        or []
-    )
-    if decision not in {"include", "exclude", "maybe"}:
-        decision = "maybe"
-    if len(rationale.split()) > 12:
-        rationale = " ".join(rationale.split()[:12])
-    if not rationale:
-        rationale = "insufficient information"
-    return {
-        "decision": decision,
-        "rationale": rationale,
-        "inclusion_evaluation": inc_eval,
-        "exclusion_evaluation": exc_eval,
-    }
-
-
 def worker(job_id: str):
     job = JOBS[job_id]
-    api_key = job.get("api_key") or os.getenv("OPENAI_API_KEY")
+    provider = job.get("provider", "openai")
+    api_key = job.get("api_key") or os.getenv(env_key_for(provider))
     if not api_key:
         job["status"] = "error"
-        job["error"] = "API key missing (provide api_key in request or set OPENAI_API_KEY env var)"
+        job["error"] = f"API key missing (provide api_key in request or set {env_key_for(provider)} env var)"
         return
     records = job["records"]
     total = len(records)
@@ -473,8 +283,8 @@ def worker(job_id: str):
             attempts = attempt
             try:
                 with adaptive:
-                    out = call_openai_chat(model, prompt, api_key, params=params,
-                                           max_retries=api_max_retries, base_backoff=api_base_backoff)
+                    out = call_llm(provider, model, prompt, api_key, params=params,
+                                   max_retries=api_max_retries, base_backoff=api_base_backoff)
                     # Validate: decision must be one of the expected values
                     decision = str(out.get("decision", "")).strip().lower()
                     if decision not in {"include", "exclude", "maybe"}:
@@ -568,6 +378,7 @@ def start_job(payload: StartPayload):
     job_id = str(uuid.uuid4())
     JOBS[job_id] = {
         "status": "running",
+        "provider": payload.provider or "openai",
         "model": payload.model or "gpt-5",
         "api_key": payload.api_key,
         "study_synopsis": payload.study_synopsis or "",

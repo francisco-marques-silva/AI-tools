@@ -65,34 +65,101 @@ function addParamTooltips() {
   });
 }
 
+// ── Provider selector ─────────────────────────────────────────────────────────
+
+function initProviderSelector() {
+  const btns = document.querySelectorAll(".provider-btn");
+  const savedProvider = localStorage.getItem("provider") || "openai";
+  state.provider = savedProvider;
+  btns.forEach(btn => btn.classList.toggle("active", btn.dataset.provider === savedProvider));
+  updateProviderUI();
+  btns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.provider = btn.dataset.provider;
+      localStorage.setItem("provider", state.provider);
+      btns.forEach(b => b.classList.toggle("active", b === btn));
+      updateProviderUI();
+    });
+  });
+}
+
+function updateProviderUI() {
+  const p = state.provider;
+  ["openai", "anthropic", "google"].forEach(id => {
+    const cfg = document.getElementById(`config-${id}`);
+    if (cfg) cfg.classList.toggle("hidden", id !== p);
+    const tier = document.getElementById(`tierSection-${id}`);
+    if (tier) tier.classList.toggle("hidden", id !== p);
+  });
+}
+
 // ── Tier presets & advanced settings ─────────────────────────────────────────
 
 const TIER_PRESETS = {
-  free: { concurrent: 2,  concurrent_max: 4,   concurrent_min: 1, record_retries: 3, aiup_after: 10, max_retries: 5, base_backoff: 2.0 },
-  "1":  { concurrent: 5,  concurrent_max: 10,  concurrent_min: 1, record_retries: 3, aiup_after: 8,  max_retries: 5, base_backoff: 1.5 },
-  "2":  { concurrent: 10, concurrent_max: 20,  concurrent_min: 2, record_retries: 3, aiup_after: 6,  max_retries: 5, base_backoff: 1.0 },
-  "3":  { concurrent: 20, concurrent_max: 40,  concurrent_min: 2, record_retries: 3, aiup_after: 5,  max_retries: 5, base_backoff: 1.0 },
-  "4":  { concurrent: 30, concurrent_max: 60,  concurrent_min: 3, record_retries: 3, aiup_after: 4,  max_retries: 5, base_backoff: 0.5 },
-  "5":  { concurrent: 50, concurrent_max: 100, concurrent_min: 5, record_retries: 3, aiup_after: 3,  max_retries: 5, base_backoff: 0.5 },
+  openai: {
+    free: { concurrent: 2,  concurrent_max: 4,   concurrent_min: 1, record_retries: 3, aiup_after: 10, max_retries: 5, base_backoff: 2.0 },
+    "1":  { concurrent: 5,  concurrent_max: 10,  concurrent_min: 1, record_retries: 3, aiup_after: 8,  max_retries: 5, base_backoff: 1.5 },
+    "2":  { concurrent: 10, concurrent_max: 20,  concurrent_min: 2, record_retries: 3, aiup_after: 6,  max_retries: 5, base_backoff: 1.0 },
+    "3":  { concurrent: 20, concurrent_max: 40,  concurrent_min: 2, record_retries: 3, aiup_after: 5,  max_retries: 5, base_backoff: 1.0 },
+    "4":  { concurrent: 30, concurrent_max: 60,  concurrent_min: 3, record_retries: 3, aiup_after: 4,  max_retries: 5, base_backoff: 0.5 },
+    "5":  { concurrent: 50, concurrent_max: 100, concurrent_min: 5, record_retries: 3, aiup_after: 3,  max_retries: 5, base_backoff: 0.5 },
+  },
+  anthropic: {
+    starter:      { concurrent: 3,  concurrent_max: 5,  concurrent_min: 1, record_retries: 3, aiup_after: 8, max_retries: 5, base_backoff: 2.0 },
+    standard:     { concurrent: 8,  concurrent_max: 15, concurrent_min: 1, record_retries: 3, aiup_after: 6, max_retries: 5, base_backoff: 1.5 },
+    professional: { concurrent: 20, concurrent_max: 40, concurrent_min: 2, record_retries: 3, aiup_after: 5, max_retries: 5, base_backoff: 1.0 },
+  },
+  google: {
+    free:        { concurrent: 2,  concurrent_max: 4,  concurrent_min: 1, record_retries: 3, aiup_after: 10, max_retries: 5, base_backoff: 2.0 },
+    pay_per_use: { concurrent: 10, concurrent_max: 20, concurrent_min: 2, record_retries: 3, aiup_after: 6,  max_retries: 5, base_backoff: 1.0 },
+    scale:       { concurrent: 30, concurrent_max: 60, concurrent_min: 3, record_retries: 3, aiup_after: 4,  max_retries: 5, base_backoff: 0.5 },
+  },
 };
 
 function initAdvancedSettings() {
-  const tierSel = document.getElementById("tierSelect"); if (!tierSel) return;
-  const savedTier = localStorage.getItem("tierSelect");
-  if (savedTier) tierSel.value = savedTier;
   const advIds = ["adv_concurrent","adv_concurrent_max","adv_concurrent_min",
                   "adv_record_retries","adv_aiup_after","adv_max_retries","adv_base_backoff"];
   advIds.forEach(id => {
     const v = localStorage.getItem(id); const el = document.getElementById(id);
     if (el && v != null) el.value = v;
   });
-  const hasAny = advIds.some(id => localStorage.getItem(id) != null);
-  if (!hasAny) applyTierPreset(tierSel.value || "3");
-  tierSel.addEventListener("change", () => applyTierPreset(tierSel.value));
+
+  const tierSel = document.getElementById("tierSelect");
+  if (tierSel) {
+    const savedTier = localStorage.getItem("tierSelect");
+    if (savedTier) tierSel.value = savedTier;
+    const hasAny = advIds.some(id => localStorage.getItem(id) != null);
+    if (!hasAny) applyTierPreset("openai", tierSel.value || "3");
+    tierSel.addEventListener("change", () => {
+      localStorage.setItem("tierSelect", tierSel.value);
+      applyTierPreset("openai", tierSel.value);
+    });
+  }
+
+  const tierClaude = document.getElementById("tierSelectClaude");
+  if (tierClaude) {
+    const saved = localStorage.getItem("tierSelectClaude");
+    if (saved) tierClaude.value = saved;
+    tierClaude.addEventListener("change", () => {
+      localStorage.setItem("tierSelectClaude", tierClaude.value);
+      if (state.provider === "anthropic") applyTierPreset("anthropic", tierClaude.value);
+    });
+  }
+
+  const tierGoogle = document.getElementById("tierSelectGoogle");
+  if (tierGoogle) {
+    const saved = localStorage.getItem("tierSelectGoogle");
+    if (saved) tierGoogle.value = saved;
+    tierGoogle.addEventListener("change", () => {
+      localStorage.setItem("tierSelectGoogle", tierGoogle.value);
+      if (state.provider === "google") applyTierPreset("google", tierGoogle.value);
+    });
+  }
 }
 
-function applyTierPreset(tier) {
-  const preset = TIER_PRESETS[tier]; if (!preset) return;
+function applyTierPreset(provider, tier) {
+  const providerPresets = TIER_PRESETS[provider] || TIER_PRESETS.openai;
+  const preset = providerPresets[tier]; if (!preset) return;
   const map = {
     adv_concurrent: "concurrent", adv_concurrent_max: "concurrent_max",
     adv_concurrent_min: "concurrent_min", adv_record_retries: "record_retries",
@@ -301,9 +368,8 @@ function validateAndPreview() {
 // ── Payload builder ───────────────────────────────────────────────────────────
 
 function buildPayload() {
-  const model    = document.getElementById("modelSelect")?.value || "";
+  const provider = state.provider || "openai";
   const synopsis = document.getElementById("studySynopsis")?.value || "";
-  const api_key  = (document.getElementById("apiKey").value || "").trim();
   const incListEls = document.querySelectorAll("#inclusionList input");
   const excListEls = document.querySelectorAll("#exclusionList input");
   const inclusionArr = incListEls.length
@@ -313,29 +379,49 @@ function buildPayload() {
     ? Array.from(excListEls).map(el => el.value.trim()).filter(Boolean)
     : splitLines(document.getElementById("exclusionCriteria")?.value || "");
 
-  if (!model)              throw new Error("Select a model.");
-  if (!state.rows.length)  throw new Error("Load a spreadsheet.");
-  if (!api_key)            throw new Error("Enter your OpenAI API key.");
-  if (!validateParamsOrWarn()) throw new Error("Please fix parameters.");
+  let model, api_key;
+  const params = {};
 
+  if (provider === "anthropic") {
+    model   = document.getElementById("modelSelectClaude")?.value || "";
+    api_key = (document.getElementById("apiKeyClaude")?.value || "").trim();
+    if (!model)   throw new Error("Select a Claude model.");
+    if (!api_key) throw new Error("Enter your Anthropic API key.");
+    const t = document.getElementById("temperatureClaude")?.value?.trim();
+    if (t) params.temperature = Number(t);
+  } else if (provider === "google") {
+    model   = document.getElementById("modelSelectGoogle")?.value || "";
+    api_key = (document.getElementById("apiKeyGoogle")?.value || "").trim();
+    if (!model)   throw new Error("Select a Gemini model.");
+    if (!api_key) throw new Error("Enter your Google API key.");
+    const t = document.getElementById("temperatureGoogle")?.value?.trim();
+    if (t) params.temperature = Number(t);
+  } else {
+    model   = document.getElementById("modelSelect")?.value || "";
+    api_key = (document.getElementById("apiKey")?.value || "").trim();
+    if (!model)   throw new Error("Select a model.");
+    if (!api_key) throw new Error("Enter your OpenAI API key.");
+    if (!validateParamsOrWarn()) throw new Error("Please fix parameters.");
+    if (isReasoningModel(model)) {
+      const v  = document.getElementById("verbosity")?.value?.trim();
+      const re = document.getElementById("reasoningEffort")?.value?.trim();
+      if (v)  params.verbosity        = v;
+      if (re) params.reasoning_effort = re;
+    } else if (isChatModel(model)) {
+      const t = document.getElementById("temperature")?.value?.trim();
+      if (t) params.temperature = Number(t);
+    }
+  }
+
+  if (!state.rows.length) throw new Error("Load a spreadsheet.");
   const first = state.rows[0] ?? {};
   if (!("title" in first) || !("abstract" in first))
     throw new Error("The spreadsheet must have 'title' and 'abstract' columns (or common variants).");
 
-  const params = {};
-  if (isReasoningModel(model)) {
-    const v  = document.getElementById("verbosity")?.value?.trim();
-    const re = document.getElementById("reasoningEffort")?.value?.trim();
-    if (v)  params.verbosity       = v;
-    if (re) params.reasoning_effort = re;
-  } else if (isChatModel(model)) {
-    const t = document.getElementById("temperature")?.value?.trim();
-    if (t) params.temperature = Number(t);
-  }
   Object.assign(params, getAdvancedParams());
 
   return {
-    model, api_key,
+    provider, model, api_key,
     study_synopsis: synopsis,
     inclusion_criteria: inclusionArr,
     exclusion_criteria: exclusionArr,

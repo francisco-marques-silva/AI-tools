@@ -93,67 +93,143 @@
           Configuration
         </h2>
 
-        <label class="field">
-          <span>Model</span>
-          <select id="modelSelect" required>
-            <option value="" disabled>Select a model…</option>
-            <optgroup label="GPT-5 family (Reasoning)">
-              <option value="gpt-5.2">GPT-5.2</option>
-              <option value="gpt-5.2-pro">GPT-5.2 Pro</option>
-              <option value="gpt-5">GPT-5</option>
-              <option value="gpt-5-pro">GPT-5 Pro</option>
-              <option value="gpt-5-mini">GPT-5 Mini</option>
-              <option value="gpt-5-nano">GPT-5 Nano</option>
-            </optgroup>
-            <optgroup label="GPT-4.1 family">
-              <option value="gpt-4.1">GPT-4.1</option>
-              <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
-              <option value="gpt-4.1-nano">GPT-4.1 Nano</option>
-            </optgroup>
-            <optgroup label="GPT-4o family">
-              <option value="gpt-4o">GPT-4o</option>
-              <option value="gpt-4o-mini">GPT-4o Mini</option>
-            </optgroup>
-            <optgroup label="Legacy">
-              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-            </optgroup>
-          </select>
-        </label>
+        <!-- Provider selector -->
+        <div class="provider-selector" id="providerSelector">
+          <button class="provider-btn active" data-provider="openai" type="button">
+            <span class="provider-badge openai-badge">ChatGPT</span>
+            <span class="provider-name">OpenAI</span>
+          </button>
+          <button class="provider-btn" data-provider="anthropic" type="button">
+            <span class="provider-badge claude-badge">Claude</span>
+            <span class="provider-name">Anthropic</span>
+          </button>
+          <button class="provider-btn" data-provider="google" type="button">
+            <span class="provider-badge gemini-badge">Gemini</span>
+            <span class="provider-name">Google</span>
+          </button>
+        </div>
 
-        <label class="field">
-          <span>OpenAI API Key</span>
-          <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off" />
-        </label>
-
-        <!-- Reasoning params -->
-        <div id="paramsReasoning" class="param-group hidden">
-          <div class="param-row">
-            <label class="field half">
-              <span>Verbosity</span>
-              <select id="verbosity">
-                <option value="low">Low</option>
-                <option value="medium" selected>Medium</option>
-                <option value="high">High</option>
-              </select>
-            </label>
-            <label class="field half">
-              <span>Reasoning Effort</span>
-              <select id="reasoningEffort">
-                <option value="minimal">Minimal</option>
-                <option value="low">Low</option>
-                <option value="medium" selected>Medium</option>
-                <option value="high">High</option>
-              </select>
+        <!-- OpenAI config -->
+        <div id="config-openai" class="provider-config">
+          <label class="field">
+            <span>Model</span>
+            <select id="modelSelect" required>
+              <option value="" disabled>Select a model…</option>
+              <optgroup label="GPT-5 family (Reasoning)">
+                <option value="gpt-5.5">GPT-5.5</option>
+                <option value="gpt-5.4">GPT-5.4</option>
+                <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+                <option value="gpt-5.4-nano">GPT-5.4 Nano</option>
+                <option value="gpt-5.2">GPT-5.2</option>
+                <option value="gpt-5.2-pro">GPT-5.2 Pro</option>
+                <option value="gpt-5">GPT-5</option>
+                <option value="gpt-5-pro">GPT-5 Pro</option>
+                <option value="gpt-5-mini">GPT-5 Mini</option>
+                <option value="gpt-5-nano">GPT-5 Nano</option>
+              </optgroup>
+              <optgroup label="GPT-4.1 family">
+                <option value="gpt-4.1">GPT-4.1</option>
+                <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                <option value="gpt-4.1-nano">GPT-4.1 Nano</option>
+              </optgroup>
+              <optgroup label="GPT-4o family">
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+              <optgroup label="Legacy">
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="field">
+            <span>OpenAI API Key</span>
+            <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off" />
+          </label>
+          <!-- Reasoning params -->
+          <div id="paramsReasoning" class="param-group hidden">
+            <div class="param-row">
+              <label class="field half">
+                <span>Verbosity</span>
+                <select id="verbosity">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label class="field half">
+                <span>Reasoning Effort</span>
+                <select id="reasoningEffort">
+                  <option value="minimal">Minimal</option>
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <!-- Chat params -->
+          <div id="paramsChat" class="param-group hidden">
+            <label class="field">
+              <span>Temperature (0–2)</span>
+              <input id="temperature" type="number" min="0" max="2" step="0.1" value="1.0" />
             </label>
           </div>
         </div>
 
-        <!-- Chat params -->
-        <div id="paramsChat" class="param-group hidden">
+        <!-- Claude / Anthropic config -->
+        <div id="config-anthropic" class="provider-config hidden">
           <label class="field">
-            <span>Temperature (0–2)</span>
-            <input id="temperature" type="number" min="0" max="2" step="0.1" value="1.0" />
+            <span>Model</span>
+            <select id="modelSelectClaude">
+              <option value="" disabled>Select a model…</option>
+              <optgroup label="Claude 4 family">
+                <option value="claude-opus-4-7">Claude Opus 4.7</option>
+                <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                <option value="claude-sonnet-4-6" selected>Claude Sonnet 4.6</option>
+                <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              </optgroup>
+              <optgroup label="Claude Opus (legacy)">
+                <option value="claude-opus-4-5-20251101">Claude Opus 4.5</option>
+                <option value="claude-opus-4-1-20250805">Claude Opus 4.1</option>
+              </optgroup>
+            </select>
           </label>
+          <label class="field">
+            <span>Anthropic API Key</span>
+            <input id="apiKeyClaude" type="password" placeholder="sk-ant-…" autocomplete="off" />
+          </label>
+          <div class="param-group">
+            <label class="field">
+              <span>Temperature (0–1)</span>
+              <input id="temperatureClaude" type="number" min="0" max="1" step="0.1" value="0.2" />
+            </label>
+          </div>
+        </div>
+
+        <!-- Google Gemini config -->
+        <div id="config-google" class="provider-config hidden">
+          <label class="field">
+            <span>Model</span>
+            <select id="modelSelectGoogle">
+              <option value="" disabled>Select a model…</option>
+              <optgroup label="Gemini 3 family">
+                <option value="gemini-3.1-pro-preview" selected>Gemini 3.1 Pro</option>
+                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+                <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="field">
+            <span>Google API Key</span>
+            <input id="apiKeyGoogle" type="password" placeholder="AIza…" autocomplete="off" />
+          </label>
+          <div class="param-group">
+            <label class="field">
+              <span>Temperature (0–2)</span>
+              <input id="temperatureGoogle" type="number" min="0" max="2" step="0.1" value="0.2" />
+            </label>
+          </div>
         </div>
 
         <div id="paramsWarning" class="field-warning hidden"></div>
@@ -203,7 +279,7 @@
           Advanced Backend Settings
         </summary>
 
-        <div class="tier-selector">
+        <div id="tierSection-openai" class="tier-selector">
           <label class="field">
             <span>OpenAI API Tier</span>
             <select id="tierSelect">
@@ -217,6 +293,30 @@
             </select>
           </label>
           <p class="tier-hint">Select your OpenAI usage tier to auto-fill recommended concurrency settings. You can still adjust values manually. <a href="https://platform.openai.com/docs/guides/rate-limits/usage-tiers" target="_blank" rel="noopener">Check your tier</a></p>
+        </div>
+
+        <div id="tierSection-anthropic" class="tier-selector hidden">
+          <label class="field">
+            <span>Anthropic API Tier</span>
+            <select id="tierSelectClaude">
+              <option value="starter">Starter</option>
+              <option value="standard" selected>Standard</option>
+              <option value="professional">Professional</option>
+            </select>
+          </label>
+          <p class="tier-hint">Select your Anthropic usage tier to auto-fill recommended concurrency settings for Claude models.</p>
+        </div>
+
+        <div id="tierSection-google" class="tier-selector hidden">
+          <label class="field">
+            <span>Google API Tier</span>
+            <select id="tierSelectGoogle">
+              <option value="free">Free (rate-limited)</option>
+              <option value="pay_per_use" selected>Pay-as-you-go</option>
+              <option value="scale">Enterprise / Scale</option>
+            </select>
+          </label>
+          <p class="tier-hint">Select your Google AI Studio tier to auto-fill recommended concurrency settings for Gemini models.</p>
         </div>
 
         <div class="advanced-grid">
