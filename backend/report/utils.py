@@ -99,3 +99,22 @@ def fmt_pct(v):
     if isinstance(v, float) and not np.isnan(v) and not np.isinf(v):
         return f"{v * 100:.1f}%"
     return "-"
+
+
+# ── F1 vs Listfinal (gold standard) ──────────────────────────────────
+
+def compute_f1_lf(d, l):
+    """F1 score against the Listfinal gold standard (not TIAB).
+
+    tp_lf = LF articles captured by AI; fn_lf = LF articles missed by AI;
+    fp_lf = AI positives that are not in LF (overinclusion).
+    Returns NaN if either input is missing.
+    """
+    if d is None or l is None:
+        return float("nan")
+    ai_pos = d["tp"] + d["fp"]
+    tp_lf = l["n_captured"]
+    fp_lf = max(0, ai_pos - tp_lf)
+    fn_lf = l["n_missed"]
+    denom = 2 * tp_lf + fp_lf + fn_lf
+    return (2 * tp_lf / denom) if denom > 0 else float("nan")

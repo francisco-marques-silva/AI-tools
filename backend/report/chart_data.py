@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .utils import normalise_model_name
+from .utils import normalise_model_name, compute_f1_lf
 
 
 # =====================================================================
@@ -110,14 +110,17 @@ def _build_model_comparison_radar(projects, all_results):
                 if v is not None and not np.isnan(v):
                     model_agg[mname]["Sens_Listfinal"].append(v)
 
-            # Specificity and F1 from diagnostic (best available proxy)
+            # Specificity from diagnostic; F1 against Listfinal gold standard
             for tn, r in diag.get(pn, {}).get(mn, {}).items():
                 if r is None:
                     continue
-                for k, mk in [("Specificity", "Specificity"), ("F1", "F1 Score")]:
-                    v = r["metrics"][mk]
-                    if not np.isnan(v):
-                        model_agg[mname][k].append(v)
+                v = r["metrics"]["Specificity"]
+                if not np.isnan(v):
+                    model_agg[mname]["Specificity"].append(v)
+                lr = lf.get(pn, {}).get(mn, {}).get(tn)
+                f1_lf = compute_f1_lf(r, lr)
+                if not np.isnan(f1_lf):
+                    model_agg[mname]["F1"].append(f1_lf)
 
             # Fulltext capture rate
             for tn in ft.get(pn, {}).get(mn, {}):
@@ -140,12 +143,16 @@ def _build_model_comparison_radar(projects, all_results):
 
 
 def _build_cost_vs_sensitivity(projects, all_results, metadados):
-    """Sheet: cost_vs_sensitivity  —  Model, Avg_Sensitivity_pct, Avg_Cost_USD, Avg_F1."""
+    """Sheet: cost_vs_sensitivity  —  Model, Avg_Sensitivity_pct, Avg_Cost_USD, Avg_F1_LF.
+
+    F1 is computed against the Listfinal gold standard (not TIAB diagnostic).
+    """
     if metadados is None:
         return None
     if "code" not in metadados.columns:
         return None
     diag = all_results.get("diagnostic", {})
+    lf = all_results.get("listfinal", {})
     model_data = {}  # model_name -> {sens: [], cost: [], f1: []}
     for pn in sorted(projects):
         proj = projects[pn]
@@ -157,11 +164,12 @@ def _build_cost_vs_sensitivity(projects, all_results, metadados):
                 if r is None:
                     continue
                 s = r["metrics"]["Sensitivity"]
-                f1 = r["metrics"]["F1 Score"]
                 if not np.isnan(s):
                     model_data[mname]["sens"].append(s)
-                if not np.isnan(f1):
-                    model_data[mname]["f1"].append(f1)
+                lr = lf.get(pn, {}).get(mn, {}).get(tn)
+                f1_lf = compute_f1_lf(r, lr)
+                if not np.isnan(f1_lf):
+                    model_data[mname]["f1"].append(f1_lf)
                 code = proj["models"][mn]["tests"][tn]["code"]
                 meta_m = metadados[metadados["code"].astype(str) == str(code)]
                 if not meta_m.empty and pd.notna(meta_m.iloc[0].get("cost_total")):
@@ -174,7 +182,7 @@ def _build_cost_vs_sensitivity(projects, all_results, metadados):
                 "Model": mname,
                 "Avg_Sensitivity_pct": np.mean(d["sens"]) * 100,
                 "Avg_Cost_USD": np.mean(d["cost"]),
-                "Avg_F1": np.mean(d["f1"]) if d["f1"] else float("nan"),
+                "Avg_F1_LF": np.mean(d["f1"]) if d["f1"] else float("nan"),
             })
     return pd.DataFrame(rows) if rows else None
 
@@ -327,27 +335,35 @@ def _build_sens_spec_dual_gold(projects, all_results):
 
 
 def _build_aggregated_performance(projects, all_results):
-    """Sheet: aggregated_performance  —  Model + metric_mean / metric_sd pairs."""
+    """Sheet: aggregated_performance  —  Model + metric_mean / metric_sd pairs.
+
+    F1 is computed against the Listfinal gold standard (not TIAB diagnostic).
+    """
     diag = all_results.get("diagnostic", {})
     lf = all_results.get("listfinal", {})
     tr = all_results.get("test_retest", {})
-    metrics_of_interest = ["Sensitivity", "Specificity", "F1 Score", "Accuracy"]
+    diag_metrics = ["Sensitivity", "Specificity", "Accuracy"]
     model_vals = {}
     for pn in sorted(projects):
         proj = projects[pn]
         for mn in sorted(proj["models"]):
             mname = proj["models"][mn]["name"]
             if mname not in model_vals:
-                model_vals[mname] = {m: [] for m in metrics_of_interest}
+                model_vals[mname] = {m: [] for m in diag_metrics}
+                model_vals[mname]["F1_LF"] = []
                 model_vals[mname]["LF_Capture"] = []
                 model_vals[mname]["Kappa_TR"] = []
             for tn, r in diag.get(pn, {}).get(mn, {}).items():
                 if r is None:
                     continue
-                for m in metrics_of_interest:
+                for m in diag_metrics:
                     v = r["metrics"][m]
                     if not np.isnan(v):
                         model_vals[mname][m].append(v)
+                lr = lf.get(pn, {}).get(mn, {}).get(tn)
+                f1_lf = compute_f1_lf(r, lr)
+                if not np.isnan(f1_lf):
+                    model_vals[mname]["F1_LF"].append(f1_lf)
             for tn in lf.get(pn, {}).get(mn, {}):
                 v = lf[pn][mn][tn]["capture_rate"]
                 if v is not None and not np.isnan(v):
@@ -357,7 +373,7 @@ def _build_aggregated_performance(projects, all_results):
                 model_vals[mname]["Kappa_TR"].append(tr_r["kappa"])
 
     rows = []
-    all_metric_keys = metrics_of_interest + ["LF_Capture", "Kappa_TR"]
+    all_metric_keys = diag_metrics + ["F1_LF", "LF_Capture", "Kappa_TR"]
     for mname, vals in model_vals.items():
         row = {"Model": mname}
         for mk in all_metric_keys:
@@ -370,7 +386,10 @@ def _build_aggregated_performance(projects, all_results):
 
 
 def _build_f1_vs_cost(projects, all_results, metadados):
-    """Sheet: f1_vs_cost  —  Model, Avg_Cost_USD, Avg_F1_LF."""
+    """Sheet: f1_vs_cost  —  Model, Avg_Cost_USD, Avg_F1_LF.
+
+    F1 is computed against the Listfinal gold standard.
+    """
     if metadados is None:
         return None
     if "code" not in metadados.columns:
@@ -389,12 +408,11 @@ def _build_f1_vs_cost(projects, all_results, metadados):
                 meta_m = metadados[metadados["code"].astype(str) == str(code)]
                 if not meta_m.empty and pd.notna(meta_m.iloc[0].get("cost_total")):
                     model_data[mname]["cost"].append(meta_m.iloc[0]["cost_total"])
-                # F1 vs Listfinal: use diagnostic F1 as proxy
                 r = diag.get(pn, {}).get(mn, {}).get(tn)
-                if r:
-                    f1v = r["metrics"]["F1 Score"]
-                    if not np.isnan(f1v):
-                        model_data[mname]["f1_lf"].append(f1v)
+                lr = lf.get(pn, {}).get(mn, {}).get(tn)
+                f1_lf = compute_f1_lf(r, lr)
+                if not np.isnan(f1_lf):
+                    model_data[mname]["f1_lf"].append(f1_lf)
     rows = []
     for mname, d in model_data.items():
         if d["cost"] and d["f1_lf"]:
@@ -442,7 +460,10 @@ def _build_sens_spec_tradeoff(projects, all_results):
 
 def _build_model_ranking_heatmap(projects, all_results, metadados):
     """Sheet: model_ranking_heatmap  —  Model + metric columns + Overall_Score.
-    Ranks models by averaging normalised metrics (higher = better)."""
+
+    Ranks models by averaging normalised metrics (higher = better).
+    F1 is computed against the Listfinal gold standard.
+    """
     if metadados is not None and "code" not in metadados.columns:
         metadados = None
     diag = all_results.get("diagnostic", {})
@@ -456,17 +477,20 @@ def _build_model_ranking_heatmap(projects, all_results, metadados):
             mname = proj["models"][mn]["name"]
             if mname not in model_avgs:
                 model_avgs[mname] = {
-                    "Sensitivity": [], "Specificity": [], "F1": [],
+                    "Sensitivity": [], "Specificity": [], "F1_LF": [],
                     "LF_Capture": [], "Kappa_TR": [], "Cost_USD": [],
                 }
             for tn, r in diag.get(pn, {}).get(mn, {}).items():
                 if r is None:
                     continue
-                for mk, dk in [("Sensitivity", "Sensitivity"), ("Specificity", "Specificity"),
-                                ("F1", "F1 Score")]:
+                for mk, dk in [("Sensitivity", "Sensitivity"), ("Specificity", "Specificity")]:
                     v = r["metrics"][dk]
                     if not np.isnan(v):
                         model_avgs[mname][mk].append(v * 100)
+                lr = lf.get(pn, {}).get(mn, {}).get(tn)
+                f1_lf = compute_f1_lf(r, lr)
+                if not np.isnan(f1_lf):
+                    model_avgs[mname]["F1_LF"].append(f1_lf * 100)
                 code = proj["models"][mn]["tests"][tn]["code"]
                 if metadados is not None:
                     mc = metadados[metadados["code"].astype(str) == str(code)]
@@ -480,7 +504,7 @@ def _build_model_ranking_heatmap(projects, all_results, metadados):
             if tr_r and not np.isnan(tr_r["kappa"]):
                 model_avgs[mname]["Kappa_TR"].append(tr_r["kappa"] * 100)
 
-    metric_keys = ["Sensitivity", "Specificity", "F1", "LF_Capture", "Kappa_TR"]
+    metric_keys = ["Sensitivity", "Specificity", "F1_LF", "LF_Capture", "Kappa_TR"]
     rows = []
     for mname, avgs in model_avgs.items():
         row = {"Model": mname}
@@ -497,6 +521,40 @@ def _build_model_ranking_heatmap(projects, all_results, metadados):
     if not df.empty:
         df = df.sort_values("Overall_Score", ascending=False).reset_index(drop=True)
     return df if not df.empty else None
+
+
+def _build_fulltext_hours_saved(projects, all_results):
+    """Sheet: fulltext_hours_saved  —  hours of full-text reading the AI
+    saves by including fewer articles at TIAB than the human screener.
+
+    Time model: 2 reviewers × 5 min per article = 10 reviewer-minutes per article
+    (= 1/6 hour). Hours saved = (Human_TIAB_Included − AI_TIAB_Included) × 10 / 60.
+    Negative values mean the AI was more inclusive than the human (extra workload).
+    """
+    diag = all_results.get("diagnostic", {})
+    rows = []
+    for pn in sorted(projects):
+        proj = projects[pn]
+        for mn in sorted(proj["models"]):
+            mname = proj["models"][mn]["name"]
+            for tn in sorted(proj["models"][mn]["tests"]):
+                d = diag.get(pn, {}).get(mn, {}).get(tn)
+                if not d:
+                    continue
+                ai_pos = d["tp"] + d["fp"]
+                hu_pos = d["tp"] + d["fn"]
+                articles_saved = hu_pos - ai_pos
+                hours_saved = articles_saved * 2 * 5 / 60.0
+                rows.append({
+                    "Project": proj["name"],
+                    "Model": mname,
+                    "Test": tn,
+                    "Human_TIAB_Included": hu_pos,
+                    "AI_TIAB_Included": ai_pos,
+                    "Articles_Saved": articles_saved,
+                    "Hours_Saved_Fulltext": hours_saved,
+                })
+    return pd.DataFrame(rows) if rows else None
 
 
 # =====================================================================
@@ -523,6 +581,7 @@ def export_chart_data(projects, all_results, metadados, output_dir: Path) -> Pat
         ("f1_vs_cost",               lambda: _build_f1_vs_cost(projects, all_results, metadados)),
         ("sens_spec_tradeoff",       lambda: _build_sens_spec_tradeoff(projects, all_results)),
         ("model_ranking_heatmap",    lambda: _build_model_ranking_heatmap(projects, all_results, metadados)),
+        ("fulltext_hours_saved",     lambda: _build_fulltext_hours_saved(projects, all_results)),
     ]
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

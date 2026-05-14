@@ -320,7 +320,7 @@ if "cost_vs_sensitivity" in sheets:
     if not df.empty:
         fig, ax = plt.subplots(figsize=(9, 5.5))
         for mi, (_, row) in enumerate(df.iterrows()):
-            avg_f1 = row["Avg_F1"] if pd.notna(row.get("Avg_F1")) else 0.5
+            avg_f1 = row["Avg_F1_LF"] if pd.notna(row.get("Avg_F1_LF")) else 0.5
             size = max(avg_f1 * 600, 60)
             key = row["Model"].strip().lower().replace(" ", "_").replace("-", "_")
             color = MODEL_COLORS.get(key, DEFAULT_COLORS[mi % len(DEFAULT_COLORS)])
@@ -335,7 +335,7 @@ if "cost_vs_sensitivity" in sheets:
 
         ax.axhline(y=95, color="#27AE60", linestyle="--", alpha=0.5, linewidth=1,
                    label="95% Sensitivity")
-        ax.set_title("Cost vs Sensitivity (Bubble Size = F1 Score)",
+        ax.set_title("Cost vs Sensitivity (Bubble Size = F1 vs Listfinal)",
                      fontsize=10, fontweight="bold", pad=8)
         ax.set_ylabel("Average Sensitivity (%)", fontsize=9)
         ax.set_xlabel("Average Cost (USD)", fontsize=9)
@@ -468,7 +468,8 @@ if "eff_frontier_runs" in sheets:
             ax.spines["bottom"].set_linewidth(0.6)
             ax.set_ylim(50, 106)
             if r == nrows - 1:
-                ax.set_xlabel("AI Positive Rate (%)", fontsize=8)
+                ax.set_xlabel("TIAB Inclusion Rate (%) — lower = less full-text work",
+                              fontsize=8)
             ax.set_xlim(-2, 102)
 
         for idx in range(n_panels, nrows * ncols):
@@ -548,7 +549,8 @@ if "eff_frontier_runs" in sheets:
             ax.spines["left"].set_linewidth(0.6)
             ax.spines["bottom"].set_linewidth(0.6)
             ax.set_ylim(50, 106)
-            ax.set_xlabel("AI Positive Rate (%)", fontsize=8)
+            ax.set_xlabel("TIAB Inclusion Rate (%) — lower = less full-text work",
+                          fontsize=8)
             ax.set_xlim(-2, 102)
 
         handles = []
@@ -618,7 +620,7 @@ if "eff_frontier_runs" in sheets:
         ax.set_title("Efficiency Frontier: Overall Mean per Model (± 1 SD)",
                      fontsize=10, fontweight="bold", pad=8)
         ax.set_ylabel("Listfinal Capture Rate (%)", fontsize=9)
-        ax.set_xlabel("AI Positive Rate (%) — lower is more selective",
+        ax.set_xlabel("TIAB Inclusion Rate (%) — lower = more selective, less full-text work",
                       fontsize=9)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -1064,6 +1066,139 @@ if "model_ranking_heatmap" in sheets:
         generated += 1
 else:
     print("    ⚠ Sheet 'model_ranking_heatmap' not found — skipping")
+
+
+# ──────────────────────────────────────────────────────────────────────
+#  CHART 17 — Fulltext Hours Saved (per Model, per Project)
+# ──────────────────────────────────────────────────────────────────────
+
+if "fulltext_hours_saved" in sheets:
+    df = sheets["fulltext_hours_saved"]
+    if not df.empty:
+        # Aggregate per (Project, Model): average across tests
+        agg = (df.groupby(["Project", "Model"], as_index=False)
+                 .agg(Hours_Saved=("Hours_Saved_Fulltext", "mean"),
+                      Articles_Saved=("Articles_Saved", "mean"),
+                      Human_Inc=("Human_TIAB_Included", "mean"),
+                      AI_Inc=("AI_TIAB_Included", "mean")))
+        projects = sorted(agg["Project"].unique())
+        models = sorted(agg["Model"].unique())
+
+        n_projs = len(projects)
+        ncols_p = min(n_projs, 3)
+        nrows_p = (n_projs + ncols_p - 1) // ncols_p
+
+        fig, axes = plt.subplots(nrows_p, ncols_p,
+                                  figsize=(5.5 * ncols_p, 4.5 * nrows_p),
+                                  squeeze=False)
+        fig.suptitle(
+            "Full-Text Reading Hours Saved per Model "
+            "(2 reviewers × 5 min per article, averaged across tests)",
+            fontsize=12, fontweight="bold", y=1.00)
+
+        # Stable color per model
+        model_colors = {}
+        for mi, m in enumerate(models):
+            key = m.strip().lower().replace(" ", "_").replace("-", "_")
+            model_colors[m] = MODEL_COLORS.get(
+                key, DEFAULT_COLORS[mi % len(DEFAULT_COLORS)])
+
+        for idx, proj in enumerate(projects):
+            r, c = divmod(idx, ncols_p)
+            ax = axes[r][c]
+            sub = agg[agg["Project"] == proj].sort_values("Hours_Saved", ascending=False)
+            xs = np.arange(len(sub))
+            hours = sub["Hours_Saved"].values
+            colors = [model_colors[m] for m in sub["Model"].values]
+
+            bars = ax.bar(xs, hours, color=colors, edgecolor="#333",
+                          linewidth=0.5, alpha=0.85, width=0.7)
+
+            for bar, h_val, arts in zip(bars, hours, sub["Articles_Saved"].values):
+                if h_val >= 0:
+                    label_y = bar.get_height() + max(abs(hours).max() * 0.02, 0.3)
+                    va = "bottom"
+                else:
+                    label_y = bar.get_height() - max(abs(hours).max() * 0.02, 0.3)
+                    va = "top"
+                ax.text(bar.get_x() + bar.get_width() / 2, label_y,
+                        f"{h_val:+.1f}h\n({int(arts):+d} arts)",
+                        ha="center", va=va, fontsize=7, fontweight="bold")
+
+            human_inc = sub["Human_Inc"].iloc[0] if not sub.empty else 0
+            ax.set_title(f"{proj}  (human included {int(human_inc)} at TIAB)",
+                         fontsize=10, fontweight="bold", pad=8)
+            ax.set_xticks(xs)
+            ax.set_xticklabels(sub["Model"].values, fontsize=8, rotation=20, ha="right")
+            ax.axhline(y=0, color="#555", linewidth=0.8)
+            if c == 0:
+                ax.set_ylabel("Hours saved at full-text phase", fontsize=9)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["left"].set_linewidth(0.6)
+            ax.spines["bottom"].set_linewidth(0.6)
+            ax.grid(axis="y", alpha=0.25)
+            if len(hours):
+                margin = max(abs(hours).max() * 0.25, 1.0)
+                ax.set_ylim(min(hours.min(), 0) - margin, hours.max() + margin)
+
+        for idx in range(n_projs, nrows_p * ncols_p):
+            r2, c2 = divmod(idx, ncols_p)
+            axes[r2][c2].set_visible(False)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        fig.savefig(str(out_dir / f"fulltext_hours_saved_by_project.{FIG_FORMAT}"),
+                    dpi=DPI, bbox_inches="tight", facecolor=FACECOLOR, edgecolor="none")
+        plt.close(fig)
+        print(f"    ✓ fulltext_hours_saved_by_project.{FIG_FORMAT}")
+        generated += 1
+
+        # ── Aggregated view: total hours saved per model across all projects ──
+        agg_model = (df.groupby("Model", as_index=False)
+                       .agg(Total_Hours=("Hours_Saved_Fulltext", "sum"),
+                            Mean_Hours=("Hours_Saved_Fulltext", "mean"),
+                            Total_Articles=("Articles_Saved", "sum")))
+        agg_model = agg_model.sort_values("Total_Hours", ascending=False)
+
+        fig2, ax2 = plt.subplots(figsize=(9, 5.5))
+        x2 = np.arange(len(agg_model))
+        colors2 = [model_colors.get(m, "#5B9BD5") for m in agg_model["Model"].values]
+        bars2 = ax2.bar(x2, agg_model["Total_Hours"].values,
+                        color=colors2, edgecolor="#333", linewidth=0.5,
+                        alpha=0.85, width=0.6)
+        for bar, h_val, arts in zip(bars2, agg_model["Total_Hours"].values,
+                                     agg_model["Total_Articles"].values):
+            offset = max(abs(agg_model["Total_Hours"]).max() * 0.02, 0.3)
+            if h_val >= 0:
+                ax2.text(bar.get_x() + bar.get_width() / 2, h_val + offset,
+                         f"{h_val:+.1f}h\n({int(arts):+d} arts)",
+                         ha="center", va="bottom", fontsize=9, fontweight="bold")
+            else:
+                ax2.text(bar.get_x() + bar.get_width() / 2, h_val - offset,
+                         f"{h_val:+.1f}h\n({int(arts):+d} arts)",
+                         ha="center", va="top", fontsize=9, fontweight="bold")
+
+        ax2.axhline(y=0, color="#555", linewidth=0.8)
+        ax2.set_title("Total Full-Text Hours Saved per Model "
+                       "(sum across all projects & tests)",
+                       fontsize=11, fontweight="bold", pad=8)
+        ax2.set_ylabel("Hours saved at full-text phase", fontsize=10)
+        ax2.set_xticks(x2)
+        ax2.set_xticklabels(agg_model["Model"].values, fontsize=9, fontweight="bold")
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_visible(False)
+        ax2.spines["left"].set_linewidth(0.6)
+        ax2.spines["bottom"].set_linewidth(0.6)
+        ax2.grid(axis="y", alpha=0.25)
+
+        plt.tight_layout()
+        fig2.savefig(str(out_dir / f"fulltext_hours_saved_total.{FIG_FORMAT}"),
+                     dpi=DPI, bbox_inches="tight", facecolor=FACECOLOR, edgecolor="none")
+        plt.close(fig2)
+        print(f"    ✓ fulltext_hours_saved_total.{FIG_FORMAT}")
+        generated += 1
+else:
+    print("    ⚠ Sheet 'fulltext_hours_saved' not found — skipping")
 
 
 # ──────────────────────────────────────────────────────────────────────

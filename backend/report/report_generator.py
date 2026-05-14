@@ -17,7 +17,7 @@ from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 
-from .utils import fmt, fmt_pct, normalise_model_name, load_file
+from .utils import fmt, fmt_pct, normalise_model_name, load_file, compute_f1_lf
 from .docx_helpers import (
     shade, set_cell, add_borders,
     add_heading, add_note, header_row,
@@ -46,16 +46,8 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         table_counter[0] += 1
         return table_counter[0]
 
-    def compute_f1_lf(d, l):
-        """F1 score relative to Listfinal (gold standard), not TIAB."""
-        if d is None or l is None:
-            return float("nan")
-        ai_pos = d["tp"] + d["fp"]
-        tp_lf = l["n_captured"]
-        fp_lf = max(0, ai_pos - tp_lf)
-        fn_lf = l["n_missed"]
-        denom = 2 * tp_lf + fp_lf + fn_lf
-        return (2 * tp_lf / denom) if denom > 0 else float("nan")
+    # Map display name → project key (project_norm) for cross-lookups
+    name_to_pn = {projects[pn]["name"]: pn for pn in projects}
 
     # ==================================================================
     #  COVER / TITLE
@@ -129,6 +121,9 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         ("Section 12 — Absolute Efficiency",
          "Combines selectivity and capture into an efficiency score. "
          "Efficiency Score = Listfinal Capture Rate × (1 − AI Positive Rate)."),
+        ("Section 13 — Full-Text Hours Saved",
+         "Quantifies how many hours of full-text reading the AI saves by including "
+         "fewer articles at the TIAB stage. Assumes 2 reviewers × 5 minutes per article."),
         ("Appendix A — TIAB False Positives",
          "Detailed per-article list with title, abstract, and which models flagged each article."),
         ("Appendix B — Fulltext Missed Articles",
@@ -1008,6 +1003,15 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         meta_work["_h_human"] = meta_work["time_human"].apply(parse_td)
         meta_work["_h_ia"] = meta_work["time_ia"].apply(parse_td)
 
+        # Normalize project key so different spellings of the same project
+        # don't create duplicate rows in the summary table, and so we can
+        # cross-reference into `diag` (which is keyed by project_norm).
+        def _proj_key(val):
+            s = str(val).strip()
+            return name_to_pn.get(s, s.lower())
+
+        meta_work["_proj_key"] = meta_work["project"].apply(_proj_key)
+
         tn_num = next_table()
         add_heading(doc, f"Table {tn_num}. Workload Reduction — Per Execution", level=2)
 
@@ -1055,7 +1059,8 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         tn_num = next_table()
         add_heading(doc, f"Table {tn_num}. Workload Reduction Summary by Project", level=2)
 
-        wr_proj = meta_work.groupby("project").agg(
+        wr_proj = meta_work.groupby("_proj_key").agg(
+            display_name=("project", "first"),
             human_hours=("_h_human", "first"),
             avg_ia_hours=("_h_ia", "mean"),
             min_ia_hours=("_h_ia", "min"),
@@ -1070,14 +1075,17 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         add_borders(tbl)
         header_row(tbl, wp_headers)
         for i, (_, row) in enumerate(wr_proj.iterrows()):
-            pn_key = row["project"]
+            pn_norm = row["_proj_key"]
+            display_name = row["display_name"]
+            if pn_norm in projects:
+                display_name = projects[pn_norm]["name"]
             h_h = row["human_hours"]
             avg_ia = row["avg_ia_hours"]
             fast = row["min_ia_hours"]
             avg_red = ((h_h - avg_ia) / h_h * 100) if (not np.isnan(h_h) and not np.isnan(avg_ia) and h_h > 0) else float("nan")
             avg_fac = (h_h / avg_ia) if (not np.isnan(h_h) and not np.isnan(avg_ia) and avg_ia > 0) else float("nan")
             total_arts = "-"
-            proj_d = diag.get(pn_key) or {}
+            proj_d = diag.get(pn_norm) or {}
             for mn2 in sorted(proj_d.keys()):
                 for tn2 in sorted(proj_d[mn2].keys()):
                     d2 = proj_d[mn2][tn2]
@@ -1087,7 +1095,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                 if total_arts != "-":
                     break
             vals = [
-                str(pn_key),
+                str(display_name),
                 total_arts,
                 fmt_hours(h_h),
                 fmt_hours(avg_ia),
@@ -1197,7 +1205,112 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         doc.add_paragraph()
 
     # ==================================================================
-    #  SAVE BASE DOCUMENT (sections 1-12)
+    #  SECTION 13 — FULL-TEXT HOURS SAVED
+    # ==================================================================
+    diag_h = all_results.get("diagnostic", {})
+    if diag_h:
+        section_num = 13
+        add_heading(doc, f"{section_num}. Full-Text Reading Hours Saved", level=1)
+        add_note(doc, "Hours of full-text reading saved because the AI included fewer articles "
+                 "at TIAB than the human. Assumes 2 reviewers × 5 minutes per article. "
+                 "Negative values mean the AI was more inclusive than the human (extra workload).")
+
+        tn_num = next_table()
+        add_heading(doc, f"Table {tn_num}. Full-Text Hours Saved by Model and Project", level=2)
+
+        hs_headers = ["Project", "Model", "Test", "Human TIAB Inc.",
+                       "AI TIAB Inc.", "Articles Saved", "Hours Saved (FT)"]
+        hs_rows = []
+        for pn in sorted(projects.keys()):
+            proj = projects[pn]
+            for mn in sorted(proj["models"].keys()):
+                model_info = proj["models"][mn]
+                model_name = model_info["name"]
+                for test_num in sorted(model_info["tests"].keys()):
+                    d = diag_h.get(pn, {}).get(mn, {}).get(test_num)
+                    if not d:
+                        continue
+                    ai_inc = d["tp"] + d["fp"]
+                    hu_inc = d["tp"] + d["fn"]
+                    arts_saved = hu_inc - ai_inc
+                    hrs_saved = arts_saved * 2 * 5 / 60.0
+                    hs_rows.append([
+                        proj["name"], model_name, f"{test_num}o",
+                        str(hu_inc), str(ai_inc),
+                        f"{arts_saved:+d}",
+                        f"{hrs_saved:+.1f}h",
+                    ])
+
+        if hs_rows:
+            tbl = doc.add_table(rows=1 + len(hs_rows), cols=len(hs_headers))
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            add_borders(tbl)
+            header_row(tbl, hs_headers)
+            for i, row_data in enumerate(hs_rows):
+                for j, val in enumerate(row_data):
+                    align = WD_ALIGN_PARAGRAPH.LEFT if j <= 2 else WD_ALIGN_PARAGRAPH.CENTER
+                    set_cell(tbl.cell(i + 1, j), val, font_size=Pt(8), align=align)
+                    if j == 6:
+                        try:
+                            num = float(val.replace("h", "").replace("+", ""))
+                            if num > 0:
+                                shade(tbl.cell(i + 1, j), "D5F5E3")
+                            elif num < 0:
+                                shade(tbl.cell(i + 1, j), "FFD6D6")
+                        except ValueError:
+                            pass
+
+            doc.add_paragraph()
+
+            # Aggregated total per model
+            tn_num = next_table()
+            add_heading(doc, f"Table {tn_num}. Total Full-Text Hours Saved per Model (across projects)", level=2)
+
+            model_totals = {}
+            for pn in sorted(projects.keys()):
+                proj = projects[pn]
+                for mn in sorted(proj["models"].keys()):
+                    model_name = proj["models"][mn]["name"]
+                    if model_name not in model_totals:
+                        model_totals[model_name] = {"arts": 0, "hrs": 0.0, "runs": 0}
+                    for test_num in sorted(proj["models"][mn]["tests"].keys()):
+                        d = diag_h.get(pn, {}).get(mn, {}).get(test_num)
+                        if not d:
+                            continue
+                        ai_inc = d["tp"] + d["fp"]
+                        hu_inc = d["tp"] + d["fn"]
+                        arts_saved = hu_inc - ai_inc
+                        model_totals[model_name]["arts"] += arts_saved
+                        model_totals[model_name]["hrs"] += arts_saved * 2 * 5 / 60.0
+                        model_totals[model_name]["runs"] += 1
+
+            tot_headers = ["Model", "Runs", "Total Articles Saved", "Total Hours Saved"]
+            tot_rows = sorted(model_totals.items(),
+                              key=lambda kv: kv[1]["hrs"], reverse=True)
+            tbl = doc.add_table(rows=1 + len(tot_rows), cols=len(tot_headers))
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            add_borders(tbl)
+            header_row(tbl, tot_headers)
+            for i, (mname, vals) in enumerate(tot_rows):
+                row_vals = [
+                    mname,
+                    str(vals["runs"]),
+                    f"{vals['arts']:+d}",
+                    f"{vals['hrs']:+.1f}h",
+                ]
+                for j, v in enumerate(row_vals):
+                    align = WD_ALIGN_PARAGRAPH.LEFT if j == 0 else WD_ALIGN_PARAGRAPH.CENTER
+                    set_cell(tbl.cell(i + 1, j), v, font_size=Pt(8), align=align)
+                    if j == 3:
+                        if vals["hrs"] > 0:
+                            shade(tbl.cell(i + 1, j), "D5F5E3")
+                        elif vals["hrs"] < 0:
+                            shade(tbl.cell(i + 1, j), "FFD6D6")
+
+            doc.add_paragraph()
+
+    # ==================================================================
+    #  SAVE BASE DOCUMENT (sections 1-13)
     # ==================================================================
     ts_file = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     base_path = output_dir / f"relatorio_base_{ts_file}.docx"
