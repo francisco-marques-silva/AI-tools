@@ -46,6 +46,17 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         table_counter[0] += 1
         return table_counter[0]
 
+    def compute_f1_lf(d, l):
+        """F1 score relative to Listfinal (gold standard), not TIAB."""
+        if d is None or l is None:
+            return float("nan")
+        ai_pos = d["tp"] + d["fp"]
+        tp_lf = l["n_captured"]
+        fp_lf = max(0, ai_pos - tp_lf)
+        fn_lf = l["n_missed"]
+        denom = 2 * tp_lf + fp_lf + fn_lf
+        return (2 * tp_lf / denom) if denom > 0 else float("nan")
+
     # ==================================================================
     #  COVER / TITLE
     # ==================================================================
@@ -778,10 +789,9 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     tr = all_results.get("test_retest", {})
 
     tn_num = next_table()
-    add_heading(doc, f"Table {tn_num}. General Comparison — Diagnostic Performance and Reproducibility", level=2)
+    add_heading(doc, f"Table {tn_num}. General Comparison — Per-Test Diagnostic Performance and Reproducibility", level=2)
 
-    big_headers = ["Project", "Model", "Test", "Sens.", "Spec.", "F1",
-                   "Kappa (diag)", "FT Capture", "LF Capture", "Kappa (T-R)", "Cost ($)"]
+    big_headers = ["Project", "Model", "Kappa (T-R)", "Test", "Sens.", "Spec.", "F1 (LF)", "Capture Rate", "Cost ($)"]
     big_rows = []
 
     for pn in sorted(projects.keys()):
@@ -790,22 +800,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             model_info = proj["models"][mn]
             model_name = model_info["name"]
             for test_num in sorted(model_info["tests"].keys()):
-                row_vals = [proj["name"], model_name, f"{test_num}o"]
-
-                d = diag.get(pn, {}).get(mn, {}).get(test_num)
-                if d:
-                    row_vals.append(fmt_pct(d["metrics"]["Sensitivity"]))
-                    row_vals.append(fmt_pct(d["metrics"]["Specificity"]))
-                    row_vals.append(fmt(d["metrics"]["F1 Score"], 3))
-                    row_vals.append(fmt(d["kappa"], 3))
-                else:
-                    row_vals.extend(["-", "-", "-", "-"])
-
-                f_res = ft.get(pn, {}).get(mn, {}).get(test_num)
-                row_vals.append(fmt_pct(f_res["capture_rate"]) if f_res else "-")
-
-                lf_res = lf.get(pn, {}).get(mn, {}).get(test_num)
-                row_vals.append(fmt_pct(lf_res["capture_rate"]) if lf_res else "-")
+                row_vals = [proj["name"], model_name]
 
                 tr_res = tr.get(pn, {}).get(mn)
                 if tr_res and test_num == 1:
@@ -814,6 +809,20 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                     row_vals.append("↑")
                 else:
                     row_vals.append("-")
+
+                row_vals.append(f"{test_num}o")
+
+                d = diag.get(pn, {}).get(mn, {}).get(test_num)
+                lf_res = lf.get(pn, {}).get(mn, {}).get(test_num)
+                if d:
+                    row_vals.append(fmt_pct(d["metrics"]["Sensitivity"]))
+                    row_vals.append(fmt_pct(d["metrics"]["Specificity"]))
+                    f1_lf = compute_f1_lf(d, lf_res)
+                    row_vals.append(fmt(f1_lf, 3) if not np.isnan(f1_lf) else "-")
+                else:
+                    row_vals.extend(["-", "-", "-"])
+
+                row_vals.append(fmt_pct(lf_res["capture_rate"]) if lf_res else "-")
 
                 code = model_info["tests"][test_num]["code"]
                 cost_val = "-"
@@ -831,8 +840,72 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
     header_row(tbl, big_headers)
     for i, row_data in enumerate(big_rows):
         for j, val in enumerate(row_data):
-            align = WD_ALIGN_PARAGRAPH.LEFT if j <= 2 else WD_ALIGN_PARAGRAPH.CENTER
+            align = WD_ALIGN_PARAGRAPH.LEFT if j <= 1 else WD_ALIGN_PARAGRAPH.CENTER
             set_cell(tbl.cell(i + 1, j), val, font_size=Pt(7), align=align)
+
+    doc.add_paragraph()
+
+    # -- Merged table: one row per (project, model), tests averaged ----------
+    tn_num = next_table()
+    add_heading(doc, f"Table {tn_num}. General Comparison — Averaged Across Tests (per Model)", level=2)
+    add_note(doc, "Each row averages metrics across Test 1 and Test 2 for the same model. "
+             "F1 is computed against the Listfinal gold standard. "
+             "Kappa (T-R) = test-retest reliability between runs.")
+
+    merged_headers = ["Project", "Model", "Kappa (T-R)", "Sens.", "Spec.", "F1 (LF)", "Capture Rate", "Cost ($)"]
+    merged_rows = []
+
+    for pn in sorted(projects.keys()):
+        proj = projects[pn]
+        for mn in sorted(proj["models"].keys()):
+            model_info = proj["models"][mn]
+            model_name = model_info["name"]
+
+            sens_vals, spec_vals, f1_lf_vals, cap_vals, cost_vals = [], [], [], [], []
+            for test_num in sorted(model_info["tests"].keys()):
+                d = diag.get(pn, {}).get(mn, {}).get(test_num)
+                lf_res = lf.get(pn, {}).get(mn, {}).get(test_num)
+                if d:
+                    s = d["metrics"]["Sensitivity"]
+                    if not np.isnan(s):
+                        sens_vals.append(s)
+                    sp = d["metrics"]["Specificity"]
+                    if not np.isnan(sp):
+                        spec_vals.append(sp)
+                    f1_lf = compute_f1_lf(d, lf_res)
+                    if not np.isnan(f1_lf):
+                        f1_lf_vals.append(f1_lf)
+                if lf_res:
+                    cr = lf_res["capture_rate"]
+                    if not np.isnan(cr):
+                        cap_vals.append(cr)
+                code = model_info["tests"][test_num]["code"]
+                if metadados is not None:
+                    meta_m = metadados[metadados["code"].astype(str) == str(code)]
+                    if not meta_m.empty and pd.notna(meta_m.iloc[0]["cost_total"]):
+                        cost_vals.append(meta_m.iloc[0]["cost_total"])
+
+            tr_res = tr.get(pn, {}).get(mn)
+            kappa_tr = fmt(tr_res["kappa"], 3) if tr_res else "-"
+
+            merged_rows.append([
+                proj["name"], model_name,
+                kappa_tr,
+                fmt_pct(np.mean(sens_vals)) if sens_vals else "-",
+                fmt_pct(np.mean(spec_vals)) if spec_vals else "-",
+                fmt(np.mean(f1_lf_vals), 3) if f1_lf_vals else "-",
+                fmt_pct(np.mean(cap_vals)) if cap_vals else "-",
+                fmt(np.mean(cost_vals), 2) if cost_vals else "-",
+            ])
+
+    tbl = doc.add_table(rows=1 + len(merged_rows), cols=len(merged_headers))
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    add_borders(tbl)
+    header_row(tbl, merged_headers)
+    for i, row_data in enumerate(merged_rows):
+        for j, val in enumerate(row_data):
+            align = WD_ALIGN_PARAGRAPH.LEFT if j <= 1 else WD_ALIGN_PARAGRAPH.CENTER
+            set_cell(tbl.cell(i + 1, j), val, font_size=Pt(8), align=align)
 
     doc.add_paragraph()
 
@@ -848,7 +921,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         add_heading(doc, f"Table {tn_num}. Cost vs. Sensitivity per Model (test average)", level=2)
 
         cost_eff_headers = ["Model", "Project", "Avg Sens.", "Avg Spec.",
-                            "Avg F1", "Avg Cost ($)", "Cost per Sens. point"]
+                            "Avg F1 (LF)", "Avg Cost ($)", "Cost per Sens. point"]
         cost_eff_rows = []
 
         for pn in sorted(diag.keys()):
@@ -866,9 +939,10 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
                     sp = r["metrics"]["Specificity"]
                     if not np.isnan(sp):
                         spec_vals.append(sp)
-                    f1v = r["metrics"]["F1 Score"]
-                    if not np.isnan(f1v):
-                        f1_vals.append(f1v)
+                    lf_r = lf.get(pn, {}).get(mn, {}).get(tn2)
+                    f1_lf = compute_f1_lf(r, lf_r)
+                    if not np.isnan(f1_lf):
+                        f1_vals.append(f1_lf)
                     code = proj["models"][mn]["tests"][tn2]["code"]
                     if metadados is not None:
                         meta_m = metadados[metadados["code"].astype(str) == str(code)]
@@ -989,20 +1063,32 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             n_runs=("_h_ia", "count"),
         ).reset_index()
 
-        wp_headers = ["Project", "Human Time", "Avg AI Time", "Fastest AI",
+        wp_headers = ["Project", "Total Articles", "Human Time", "Avg AI Time", "Fastest AI",
                       "Avg Reduction (%)", "Avg Speed Factor"]
         tbl = doc.add_table(rows=1 + len(wr_proj), cols=len(wp_headers))
         tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
         add_borders(tbl)
         header_row(tbl, wp_headers)
         for i, (_, row) in enumerate(wr_proj.iterrows()):
+            pn_key = row["project"]
             h_h = row["human_hours"]
             avg_ia = row["avg_ia_hours"]
             fast = row["min_ia_hours"]
             avg_red = ((h_h - avg_ia) / h_h * 100) if (not np.isnan(h_h) and not np.isnan(avg_ia) and h_h > 0) else float("nan")
             avg_fac = (h_h / avg_ia) if (not np.isnan(h_h) and not np.isnan(avg_ia) and avg_ia > 0) else float("nan")
+            total_arts = "-"
+            proj_d = diag.get(pn_key) or {}
+            for mn2 in sorted(proj_d.keys()):
+                for tn2 in sorted(proj_d[mn2].keys()):
+                    d2 = proj_d[mn2][tn2]
+                    if d2 is not None:
+                        total_arts = str(d2["n_paired"])
+                        break
+                if total_arts != "-":
+                    break
             vals = [
-                str(row["project"]),
+                str(pn_key),
+                total_arts,
                 fmt_hours(h_h),
                 fmt_hours(avg_ia),
                 fmt_hours(fast),
@@ -1030,7 +1116,7 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
 
         eff_headers = ["Project", "Model", "Test", "TIAB N",
                        "AI Positives", "AI Pos. (%)", "Human Positives", "Human Pos. (%)",
-                       "Reduction", "LF Capture", "Efficiency Score"]
+                       "Reduction", "Capture Rate", "Efficiency Score"]
         eff_rows = []
 
         for pn in sorted(projects.keys()):
@@ -1111,9 +1197,36 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
         doc.add_paragraph()
 
     # ==================================================================
+    #  SAVE BASE DOCUMENT (sections 1-12)
+    # ==================================================================
+    ts_file = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_path = output_dir / f"relatorio_base_{ts_file}.docx"
+    doc.save(str(base_path))
+
+    # Create appendix document — reassign doc so existing appendix code works unchanged
+    doc = Document()
+    _sty = doc.styles["Normal"]
+    _sty.font.name = "Times New Roman"
+    _sty.font.size = Pt(10)
+    _sty.paragraph_format.space_after = Pt(4)
+    table_counter[0] = 0  # reset table numbering for appendix
+
+    _title_p = doc.add_paragraph()
+    _title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _r = _title_p.add_run("Appendices — AI Screening Analysis Report")
+    _r.bold = True
+    _r.font.size = Pt(16)
+    _r.font.name = "Times New Roman"
+    _sub = doc.add_paragraph()
+    _sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _r2 = _sub.add_run(f"Base report: {base_path.name}")
+    _r2.font.size = Pt(9)
+    _r2.font.color.rgb = RGBColor(100, 100, 100)
+    doc.add_page_break()
+
+    # ==================================================================
     #  APPENDIX A — TIAB FALSE POSITIVES
     # ==================================================================
-    doc.add_page_break()
     add_heading(doc, "Appendix A. TIAB False Positives by Run", level=1)
     add_note(doc, "Articles included by the AI but excluded by the human screener at the TIAB stage.")
 
@@ -1351,9 +1464,8 @@ def generate_report(projects, metadados, all_results, output_dir: Path):
             doc.add_paragraph()
 
     # ==================================================================
-    #  SAVE
+    #  SAVE APPENDIX DOCUMENT
     # ==================================================================
-    ts_file = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    docx_path = output_dir / f"relatorio_unificado_{ts_file}.docx"
-    doc.save(str(docx_path))
-    return docx_path
+    app_path = output_dir / f"relatorio_appendix_{ts_file}.docx"
+    doc.save(str(app_path))
+    return base_path, app_path

@@ -105,14 +105,17 @@ const TIER_PRESETS = {
     "5":  { concurrent: 50, concurrent_max: 100, concurrent_min: 5, record_retries: 3, aiup_after: 3,  max_retries: 5, base_backoff: 0.5 },
   },
   anthropic: {
-    starter:      { concurrent: 3,  concurrent_max: 5,  concurrent_min: 1, record_retries: 3, aiup_after: 8, max_retries: 5, base_backoff: 2.0 },
-    standard:     { concurrent: 8,  concurrent_max: 15, concurrent_min: 1, record_retries: 3, aiup_after: 6, max_retries: 5, base_backoff: 1.5 },
-    professional: { concurrent: 20, concurrent_max: 40, concurrent_min: 2, record_retries: 3, aiup_after: 5, max_retries: 5, base_backoff: 1.0 },
+    "1":        { concurrent: 3,  concurrent_max: 5,   concurrent_min: 1, record_retries: 3, aiup_after: 10, max_retries: 5, base_backoff: 2.0 },
+    "2":        { concurrent: 8,  concurrent_max: 15,  concurrent_min: 1, record_retries: 3, aiup_after: 7,  max_retries: 5, base_backoff: 1.5 },
+    "3":        { concurrent: 15, concurrent_max: 30,  concurrent_min: 2, record_retries: 3, aiup_after: 5,  max_retries: 5, base_backoff: 1.0 },
+    "4":        { concurrent: 30, concurrent_max: 60,  concurrent_min: 3, record_retries: 3, aiup_after: 4,  max_retries: 5, base_backoff: 0.5 },
+    invoicing:  { concurrent: 50, concurrent_max: 100, concurrent_min: 5, record_retries: 3, aiup_after: 3,  max_retries: 5, base_backoff: 0.5 },
   },
   google: {
-    free:        { concurrent: 2,  concurrent_max: 4,  concurrent_min: 1, record_retries: 3, aiup_after: 10, max_retries: 5, base_backoff: 2.0 },
-    pay_per_use: { concurrent: 10, concurrent_max: 20, concurrent_min: 2, record_retries: 3, aiup_after: 6,  max_retries: 5, base_backoff: 1.0 },
-    scale:       { concurrent: 30, concurrent_max: 60, concurrent_min: 3, record_retries: 3, aiup_after: 4,  max_retries: 5, base_backoff: 0.5 },
+    free: { concurrent: 2,  concurrent_max: 4,  concurrent_min: 1, record_retries: 3, aiup_after: 10, max_retries: 5, base_backoff: 2.0 },
+    "1":  { concurrent: 5,  concurrent_max: 10, concurrent_min: 1, record_retries: 3, aiup_after: 8,  max_retries: 5, base_backoff: 1.5 },
+    "2":  { concurrent: 15, concurrent_max: 30, concurrent_min: 2, record_retries: 3, aiup_after: 6,  max_retries: 5, base_backoff: 1.0 },
+    "3":  { concurrent: 30, concurrent_max: 60, concurrent_min: 3, record_retries: 3, aiup_after: 4,  max_retries: 5, base_backoff: 0.5 },
   },
 };
 

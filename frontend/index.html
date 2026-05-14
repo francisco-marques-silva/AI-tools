@@ -328,24 +328,27 @@
           <label class="field">
             <span>Anthropic API Tier</span>
             <select id="tierSelectClaude">
-              <option value="starter">Starter</option>
-              <option value="standard" selected>Standard</option>
-              <option value="professional">Professional</option>
+              <option value="1">Tier 1 — up to $100/mo</option>
+              <option value="2" selected>Tier 2 — up to $500/mo</option>
+              <option value="3">Tier 3 — up to $1,000/mo</option>
+              <option value="4">Tier 4 — up to $200,000/mo</option>
+              <option value="invoicing">Monthly Invoicing — no limit</option>
             </select>
           </label>
-          <p class="tier-hint">Select your Anthropic usage tier to auto-fill recommended concurrency settings for Claude models.</p>
+          <p class="tier-hint">Select your Anthropic usage tier to auto-fill recommended concurrency settings for Claude models. <a href="https://platform.claude.com/docs/en/api/rate-limits" target="_blank" rel="noopener">Check your tier</a></p>
         </div>
 
         <div id="tierSection-google" class="tier-selector hidden">
           <label class="field">
             <span>Google API Tier</span>
             <select id="tierSelectGoogle">
-              <option value="free">Free (rate-limited)</option>
-              <option value="pay_per_use" selected>Pay-as-you-go</option>
-              <option value="scale">Enterprise / Scale</option>
+              <option value="free">Free — no billing cap</option>
+              <option value="1" selected>Tier 1 — up to $250</option>
+              <option value="2">Tier 2 — up to $2,000</option>
+              <option value="3">Tier 3 — up to $100,000+</option>
             </select>
           </label>
-          <p class="tier-hint">Select your Google AI Studio tier to auto-fill recommended concurrency settings for Gemini models.</p>
+          <p class="tier-hint">Select your Google AI Studio usage tier to auto-fill recommended concurrency settings for Gemini models. <a href="https://ai.google.dev/gemini-api/docs/rate-limits" target="_blank" rel="noopener">Check your tier</a></p>
         </div>
 
         <div class="advanced-grid">

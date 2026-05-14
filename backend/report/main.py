@@ -327,8 +327,9 @@ def main():
 
     # ---- Generate Word report ----
     print("\n  Generating Word report...")
-    docx_path = generate_report(projects, metadados, all_results, output_dir)
-    print(f"\n  ✓ Report generated: {docx_path.name}")
+    base_path, app_path = generate_report(projects, metadados, all_results, output_dir)
+    print(f"\n  ✓ Base report generated: {base_path.name}")
+    print(f"  ✓ Appendices generated:  {app_path.name}")
 
     # ---- Export chart data XLSX ----
     print("  Exporting chart data XLSX...")
