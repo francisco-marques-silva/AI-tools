@@ -54,6 +54,7 @@
   <input type="radio" id="tab-r-fulltext" name="app-tab" class="tab-radio">
   <input type="radio" id="tab-r-rob" name="app-tab" class="tab-radio">
   <input type="radio" id="tab-r-report" name="app-tab" class="tab-radio">
+  <input type="radio" id="tab-r-validation" name="app-tab" class="tab-radio">
 
   <!-- ===== TAB NAV ===== -->
   <nav class="tab-nav">
@@ -86,6 +87,13 @@
           <span class="tab-btn-sub">Validation &amp; analysis charts</span>
         </span>
       </label>
+      <label class="tab-btn" for="tab-r-validation">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span class="tab-btn-text">
+          <span class="tab-btn-title">Validation</span>
+          <span class="tab-btn-sub">Tested models &amp; benchmarks</span>
+        </span>
+      </label>
     </div>
   </nav>
 
@@ -105,6 +113,41 @@
         <p class="pane-header-desc">Configure a model, upload your TIAB spreadsheet, and let AI screen every title &amp; abstract — returning include, exclude, or maybe decisions.</p>
       </div>
     </div>
+
+    <!-- How to Use Screening -->
+    <section class="card how-to-card" id="howToScreeningCard">
+      <details>
+        <summary class="card-title clickable">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          How to Use AI Screening
+          <span class="how-to-badge">Guide</span>
+        </summary>
+        <div class="how-to-body">
+          <ol class="how-to-steps">
+            <li class="how-to-step">
+              <div class="step-title">Pick a provider and a model</div>
+              <p>Use the <strong>OpenAI / Anthropic / Google</strong> selector. Paste your API key (the field next to each model dropdown has a <em>"How to get a key?"</em> link if you don't have one yet). For most reviews, a mid-tier reasoning model (e.g. <code>gpt-5-mini</code>, <code>claude-sonnet-4-6</code>, or <code>gemini-3-flash</code>) is the best cost/quality balance.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Describe your study and criteria</div>
+              <p>Fill in <strong>PICO / Synopsis</strong> with 2–4 sentences explaining what your review is about. Add concrete <strong>inclusion</strong> and <strong>exclusion</strong> criteria — one per line. The clearer they are, the more consistent the AI's decisions.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Upload your spreadsheet</div>
+              <p>Drag any <code>.xlsx</code>, <code>.xls</code> or <code>.csv</code> with a <code>title</code> and an <code>abstract</code> column. Other columns are kept and copied to the output. Set the output filename to something descriptive — you'll need it for the Report tab later.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">(Optional) Tune Advanced Settings</div>
+              <p>Open <strong>Advanced Backend Settings</strong>, pick your API tier from the dropdown, and the recommended concurrency values fill in automatically. Defaults work for most users.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Send and download</div>
+              <p>Click <strong>Send to Backend</strong>. You'll see live progress; each article gets <code>include</code>, <code>maybe</code>, or <code>exclude</code> plus a short rationale. When finished, download the result as CSV or XLSX. Settings are auto-saved in this browser.</p>
+            </li>
+          </ol>
+        </div>
+      </details>
+    </section>
 
     <!-- Step 1 -->
     <div class="step-divider">
@@ -174,6 +217,15 @@
             <span>OpenAI API Key</span>
             <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off" />
           </label>
+          <details class="api-help">
+            <summary>How to get a key? <span class="api-help-arrow">▸</span></summary>
+            <ol class="api-help-steps">
+              <li>Sign in at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></li>
+              <li>Click <strong>Create new secret key</strong>, give it a name, and confirm.</li>
+              <li>Copy the value (starts with <code>sk-…</code>) and paste it above. You won't be able to see it again later.</li>
+            </ol>
+            <p class="api-help-note">The key stays in your browser and is only sent to OpenAI when you screen. It is not stored on our server.</p>
+          </details>
           <!-- Reasoning params -->
           <div id="paramsReasoning" class="param-group hidden">
             <div class="param-row">
@@ -228,6 +280,15 @@
             <span>Anthropic API Key</span>
             <input id="apiKeyClaude" type="password" placeholder="sk-ant-…" autocomplete="off" />
           </label>
+          <details class="api-help">
+            <summary>How to get a key? <span class="api-help-arrow">▸</span></summary>
+            <ol class="api-help-steps">
+              <li>Sign in at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a></li>
+              <li>Click <strong>Create Key</strong>, name it, and add billing if prompted.</li>
+              <li>Copy the value (starts with <code>sk-ant-…</code>) and paste it above.</li>
+            </ol>
+            <p class="api-help-note">The key stays in your browser and is only sent to Anthropic when you screen. It is not stored on our server.</p>
+          </details>
           <div class="param-group">
             <label class="field">
               <span>Temperature (0–1)</span>
@@ -253,6 +314,15 @@
             <span>Google API Key</span>
             <input id="apiKeyGoogle" type="password" placeholder="AIza…" autocomplete="off" />
           </label>
+          <details class="api-help">
+            <summary>How to get a key? <span class="api-help-arrow">▸</span></summary>
+            <ol class="api-help-steps">
+              <li>Sign in at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></li>
+              <li>Click <strong>Create API key</strong> (you may need to select or create a Cloud project).</li>
+              <li>Copy the value (starts with <code>AIza…</code>) and paste it above.</li>
+            </ol>
+            <p class="api-help-note">The key stays in your browser and is only sent to Google when you screen. It is not stored on our server.</p>
+          </details>
           <div class="param-group">
             <label class="field">
               <span>Temperature (0–2)</span>
@@ -729,6 +799,56 @@
     </section>
 
   </div><!-- /pane-report -->
+
+  <!-- ===== VALIDATION PANE ===== -->
+  <div id="pane-validation" class="tab-pane" role="tabpanel">
+
+    <!-- Pane Banner -->
+    <div class="pane-header pane-header-validation">
+      <div class="pane-header-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <div class="pane-header-content">
+        <h2 class="pane-header-title">Model Benchmarks</h2>
+        <p class="pane-header-desc">See which AI models from OpenAI, Anthropic, and Google have been validated on real systematic-review projects — and how they performed across sensitivity, capture rate, cost, and reproducibility.</p>
+      </div>
+    </div>
+
+    <!-- Provider summary cards -->
+    <div class="validation-providers">
+      <div class="validation-provider-card">
+        <span class="provider-badge openai-badge">ChatGPT</span>
+        <h3>OpenAI</h3>
+        <p>GPT-5 family, GPT-4.1, GPT-4o</p>
+      </div>
+      <div class="validation-provider-card">
+        <span class="provider-badge claude-badge">Claude</span>
+        <h3>Anthropic</h3>
+        <p>Claude Opus 4, Sonnet 4, Haiku 4</p>
+      </div>
+      <div class="validation-provider-card">
+        <span class="provider-badge gemini-badge">Gemini</span>
+        <h3>Google</h3>
+        <p>Gemini 3 Pro, Flash, Flash Lite</p>
+      </div>
+    </div>
+
+    <!-- External link card (inactive — site under construction) -->
+    <section class="card validation-link-card">
+      <div class="validation-link-icon">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      </div>
+      <span class="wip-badge">Coming Soon</span>
+      <h2 class="validation-link-title">Full Benchmark Report</h2>
+      <p class="validation-link-desc">The complete benchmark page — with per-model metrics across all tested projects, side-by-side comparisons, and downloadable raw results — is being prepared and will be hosted on GitHub Pages.</p>
+      <a href="#" class="btn btn-primary disabled" aria-disabled="true" tabindex="-1" onclick="event.preventDefault()">
+        Open Benchmark Page
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>
+      <p class="validation-link-note">Want to validate models on your own dataset in the meantime? Use the <strong>Report</strong> tab.</p>
+    </section>
+
+  </div><!-- /pane-validation -->
 
   <!-- Lightbox (outside panes, fixed overlay) -->
   <div id="chartLightbox" class="lightbox hidden" role="dialog" aria-modal="true">
