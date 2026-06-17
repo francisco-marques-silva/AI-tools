@@ -2,11 +2,14 @@
 google_provider.py — Google Gemini provider (REST, no SDK dependency).
 
 API docs: https://ai.google.dev/api/generate-content
+PDF input: https://ai.google.dev/gemini-api/docs/document-processing
 
 Uses the v1beta generateContent endpoint with:
   - systemInstruction for the JSON-only instruction
   - responseMimeType: "application/json" for structured output
+  - inlineData for inline PDF attachment (when pdf_bytes is provided)
 """
+import base64
 import random
 import time
 from typing import Any, Dict, Optional
@@ -25,8 +28,13 @@ def call_google(
     params: Optional[Dict[str, Any]] = None,
     max_retries: int = 5,
     base_backoff: float = 1.0,
+    pdf_bytes: Optional[bytes] = None,
 ) -> Dict[str, Any]:
-    """Call Google Gemini generateContent API and return a normalised screening result."""
+    """Call Google Gemini generateContent API and return a normalised screening result.
+
+    When `pdf_bytes` is provided, the PDF is attached as an inlineData part.
+    Gemini reads the PDF directly (preserves layout, tables, figures).
+    """
     temperature = 0.2
     max_output_tokens = 1024
     if params:
@@ -41,9 +49,18 @@ def call_google(
 
     url = f"{_API_BASE}/{model}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
+
+    parts: list = []
+    if pdf_bytes:
+        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
+        parts.append({
+            "inlineData": {"mimeType": "application/pdf", "data": pdf_b64},
+        })
+    parts.append({"text": prompt})
+
     body: Dict[str, Any] = {
         "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
-        "contents": [{"parts": [{"text": prompt}]}],
+        "contents": [{"parts": parts}],
         "generationConfig": {
             "temperature": temperature,
             "maxOutputTokens": max_output_tokens,
@@ -52,8 +69,9 @@ def call_google(
     }
 
     r = None
+    request_timeout = 300 if pdf_bytes else 120
     for attempt in range(1, max_retries + 1):
-        r = requests.post(url, headers=headers, json=body, timeout=120)
+        r = requests.post(url, headers=headers, json=body, timeout=request_timeout)
         if r.status_code == 200:
             break
         if r.status_code == 429:

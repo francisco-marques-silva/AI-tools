@@ -118,3 +118,44 @@ def compute_f1_lf(d, l):
     fn_lf = l["n_missed"]
     denom = 2 * tp_lf + fp_lf + fn_lf
     return (2 * tp_lf / denom) if denom > 0 else float("nan")
+
+
+def compute_metrics_vs_lf(n_universe, n_positives, lf):
+    """Sens/Spec/F1 of any decision-set against the Listfinal gold standard.
+
+    Works for both the AI and the human reviewer.
+
+    n_universe : int
+        Total articles in the screening universe (paired/found).
+    n_positives : int
+        Number of articles the decision-set marked as include/maybe.
+    lf : dict
+        Output of `run_listfinal_check` (or `run_human_vs_lf`); must contain
+        `n_captured` (TP_lf), `n_missed` (FN_lf), `n_found` (LF-in-universe).
+
+    Returns dict with tp/fp/fn/tn vs LF, sens/spec/f1, and inclusion_rate.
+    Returns NaN-filled metrics when data are missing or inconsistent.
+    """
+    nan_result = {
+        "tp_lf": 0, "fp_lf": 0, "fn_lf": 0, "tn_lf": 0,
+        "sens_lf": float("nan"), "spec_lf": float("nan"),
+        "f1_lf": float("nan"), "inclusion_rate": float("nan"),
+        "n_universe": n_universe or 0, "n_positives": n_positives or 0,
+    }
+    if lf is None or n_universe is None or n_universe <= 0:
+        return nan_result
+    tp = int(lf.get("n_captured", 0))
+    fn = int(lf.get("n_missed", 0))
+    lf_in = tp + fn
+    fp = max(0, int(n_positives or 0) - tp)
+    tn = max(0, int(n_universe) - lf_in - fp)
+    sens = tp / (tp + fn) if (tp + fn) else float("nan")
+    spec = tn / (tn + fp) if (tn + fp) else float("nan")
+    f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) else float("nan")
+    inclusion_rate = (n_positives / n_universe) if n_universe else float("nan")
+    return {
+        "tp_lf": tp, "fp_lf": fp, "fn_lf": fn, "tn_lf": tn,
+        "sens_lf": sens, "spec_lf": spec, "f1_lf": f1,
+        "inclusion_rate": inclusion_rate,
+        "n_universe": n_universe, "n_positives": n_positives or 0,
+    }

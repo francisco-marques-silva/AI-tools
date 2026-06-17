@@ -2,11 +2,13 @@
 anthropic_provider.py — Anthropic Claude provider (HTTP, no SDK dependency).
 
 API docs: https://docs.anthropic.com/en/api/messages
+PDF support: https://docs.anthropic.com/en/docs/build-with-claude/pdf-support
 
 Rate limits:
   HTTP 429 — rate limited (requests per minute / tokens per minute exceeded)
   HTTP 529 — Anthropic service overloaded — treat as rate-limit for AIMD purposes
 """
+import base64
 import random
 import time
 from typing import Any, Dict, Optional
@@ -26,8 +28,14 @@ def call_anthropic(
     params: Optional[Dict[str, Any]] = None,
     max_retries: int = 5,
     base_backoff: float = 2.0,
+    pdf_bytes: Optional[bytes] = None,
 ) -> Dict[str, Any]:
-    """Call the Anthropic Messages API and return a normalised screening result."""
+    """Call the Anthropic Messages API and return a normalised screening result.
+
+    When `pdf_bytes` is provided, attach the PDF as a document content block.
+    Claude reads the PDF directly (preserves layout, tables, figures, and
+    handles scanned PDFs via vision).
+    """
     temperature = 0.2
     max_tokens = 1024
     if params:
@@ -45,17 +53,35 @@ def call_anthropic(
         "anthropic-version": _API_VERSION,
         "content-type": "application/json",
     }
+
+    if pdf_bytes:
+        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
+        user_content: Any = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": pdf_b64,
+                },
+            },
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        user_content = prompt
+
     body: Dict[str, Any] = {
         "model": model,
         "max_tokens": max_tokens,
         "system": SYSTEM_INSTRUCTION,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": user_content}],
         "temperature": temperature,
     }
 
     r = None
+    request_timeout = 300 if pdf_bytes else 120
     for attempt in range(1, max_retries + 1):
-        r = requests.post(_API_URL, headers=headers, json=body, timeout=120)
+        r = requests.post(_API_URL, headers=headers, json=body, timeout=request_timeout)
         if r.status_code == 200:
             break
         if r.status_code in (429, 529):

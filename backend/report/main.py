@@ -24,6 +24,7 @@ from backend.report.analysis import (
     run_diagnostic,
     run_fulltext_check,
     run_listfinal_check,
+    run_human_vs_lf,
     run_test_retest,
 )
 from backend.report.chart_data import export_chart_data
@@ -242,6 +243,25 @@ def run_all_analyses(projects, metadados):
 
     all_results["listfinal"] = lf_results
 
+    # ---- Human reviewer baseline vs Listfinal ----
+    print("\n  Running human-vs-Listfinal baseline...")
+    hu_lf_results = {}
+    for pn in sorted(projects.keys()):
+        proj = projects[pn]
+        if not (proj.get("human_listfinal") and proj.get("human_tiab")):
+            continue
+        print(f"    {proj['name']}...", end=" ")
+        try:
+            r = run_human_vs_lf(proj["human_tiab"], proj["human_listfinal"])
+            hu_lf_results[pn] = r
+            print(
+                f"OK (Capture={fmt_pct(r['capture_rate'])}, "
+                f"Missed={r['n_missed']}, NotFound={r['n_not_found']})"
+            )
+        except Exception as e:
+            print(f"ERROR: {e}")
+    all_results["human_listfinal"] = hu_lf_results
+
     # ---- Test-Retest ----
     print("\n  Running test-retest...")
     tr_results = {}
@@ -325,11 +345,13 @@ def main():
     # ---- Run analyses ----
     all_results = run_all_analyses(projects, metadados)
 
-    # ---- Generate Word report ----
-    print("\n  Generating Word report...")
-    base_path, app_path = generate_report(projects, metadados, all_results, output_dir)
-    print(f"\n  ✓ Base report generated: {base_path.name}")
-    print(f"  ✓ Appendices generated:  {app_path.name}")
+    # ---- Generate Word reports ----
+    print("\n  Generating Word reports...")
+    report_paths = generate_report(projects, metadados, all_results, output_dir)
+    if report_paths:
+        print(f"\n  ✓ Reports generated ({len(report_paths)} files):")
+        for p in report_paths:
+            print(f"      • {p.name}")
 
     # ---- Export chart data XLSX ----
     print("  Exporting chart data XLSX...")

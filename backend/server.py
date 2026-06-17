@@ -613,6 +613,446 @@ def health():
 
 
 # ===========================================================================
+#  FULL-TEXT SCREENING (beta)
+# ===========================================================================
+#
+# Beta full-text screening: each PDF is sent natively to the LLM (no text
+# extraction) and the model returns a per-criterion evaluation + final
+# include/exclude/maybe decision. Mirrors the TIAB pipeline structure
+# (AIMD concurrency, SSE progress, XLSX download).
+
+from backend.fulltext_prompt import render_prompt as _ft_render_prompt, preview_prompt as _ft_preview_prompt  # noqa: E402
+
+FULLTEXT_JOBS: Dict[str, Dict[str, Any]] = {}
+_FT_MAX_PDF_BYTES = 32 * 1024 * 1024  # 32 MB per PDF — Anthropic's documented limit
+
+
+def _ft_parse_criteria(raw: Optional[str]) -> List[str]:
+    """Parse criteria string into a list of clean lines.
+
+    Accepts either JSON-encoded list/string or a plain newline-separated string.
+    """
+    if not raw:
+        return []
+    s = raw.strip()
+    if not s:
+        return []
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, list):
+            return [str(x).strip() for x in parsed if str(x).strip()]
+        if isinstance(parsed, str):
+            s = parsed
+    except Exception:
+        pass
+    return [ln.strip() for ln in s.splitlines() if ln.strip()]
+
+
+def fulltext_worker(job_id: str):
+    """Worker that processes one full-text screening job.
+
+    Each "record" here is a PDF: read its bytes, render the prompt, attach the
+    PDF natively, and let the LLM return a structured decision.
+    """
+    job = FULLTEXT_JOBS[job_id]
+    provider = job.get("provider", "openai")
+    api_key = job.get("api_key") or os.getenv(env_key_for(provider))
+    if not api_key:
+        job["status"] = "error"
+        job["error"] = f"API key missing (provide api_key or set {env_key_for(provider)})"
+        return
+
+    pdfs: List[Dict[str, Any]] = job["pdfs"]
+    total = len(pdfs)
+    job["total"] = total
+    job["processed"] = 0
+    results: List[Dict[str, Any]] = []
+    model = job["model"]
+    synopsis = job["study_synopsis"]
+    inc = job["inclusion_criteria"]
+    exc = job["exclusion_criteria"]
+    params = job.get("params") or {}
+
+    record_max_retries = RECORD_MAX_RETRIES
+    if params.get("record_max_retries"):
+        try:
+            record_max_retries = max(1, min(int(params["record_max_retries"]), 10))
+        except (ValueError, TypeError):
+            pass
+
+    init_concurrency = CONCURRENT_WORKERS
+    max_concurrency  = CONCURRENT_MAX
+    min_concurrency  = CONCURRENT_MIN
+    aiup_after       = AIUP_AFTER
+    if params.get("concurrency"):
+        try: init_concurrency = max(1, int(params["concurrency"]))
+        except (ValueError, TypeError): pass
+    if params.get("concurrency_max"):
+        try: max_concurrency = max(1, int(params["concurrency_max"]))
+        except (ValueError, TypeError): pass
+    if params.get("concurrent_min"):
+        try: min_concurrency = max(1, int(params["concurrent_min"]))
+        except (ValueError, TypeError): pass
+    if params.get("aiup_after"):
+        try: aiup_after = max(1, int(params["aiup_after"]))
+        except (ValueError, TypeError): pass
+
+    api_max_retries = MAX_RETRIES
+    api_base_backoff = BASE_BACKOFF
+    if params.get("max_retries"):
+        try: api_max_retries = max(1, min(int(params["max_retries"]), 20))
+        except (ValueError, TypeError): pass
+    if params.get("base_backoff"):
+        try: api_base_backoff = max(0.1, min(float(params["base_backoff"]), 10.0))
+        except (ValueError, TypeError): pass
+
+    adaptive = AdaptiveSemaphore(
+        initial=init_concurrency,
+        min_workers=min_concurrency,
+        max_workers=max_concurrency,
+        increase_after=aiup_after,
+    )
+    job["concurrency_stats"] = adaptive.stats
+
+    lock = threading.Lock()
+
+    def process_pdf(idx: int, rec: Dict[str, Any]):
+        if job.get("status") == "cancelled":
+            return
+
+        filename = rec.get("filename") or f"document_{idx}.pdf"
+        pdf_path = rec.get("path")
+
+        try:
+            with open(pdf_path, "rb") as fh:
+                pdf_bytes = fh.read()
+        except Exception as read_err:
+            with lock:
+                results.append({
+                    "id": idx,
+                    "filename": filename,
+                    "title": "",
+                    "screening_decision": "maybe",
+                    "screening_reason": f"could not read PDF: {read_err}",
+                    "inclusion_evaluation": [{"criterion": c, "status": "unclear"} for c in inc],
+                    "exclusion_evaluation": [{"criterion": c, "status": "unclear"} for c in exc],
+                    "_retries": 0,
+                    "_error_log": [str(read_err)],
+                })
+                job["processed"] = len(results)
+                job["results"] = list(results)
+            return
+
+        prompt = _ft_render_prompt(synopsis, inc, exc, filename=filename)
+
+        out: Optional[Dict[str, Any]] = None
+        error_log: List[str] = []
+        attempts = 0
+
+        for attempt in range(1, record_max_retries + 1):
+            if job.get("status") == "cancelled":
+                return
+            attempts = attempt
+            try:
+                with adaptive:
+                    out = call_llm(
+                        provider, model, prompt, api_key,
+                        params=params,
+                        max_retries=api_max_retries,
+                        base_backoff=api_base_backoff,
+                        pdf_bytes=pdf_bytes,
+                    )
+                    decision = str(out.get("decision", "")).strip().lower()
+                    if decision not in {"include", "exclude", "maybe"}:
+                        raise ValueError(f"Unexpected decision value: {decision!r}")
+                adaptive.on_success()
+                break
+
+            except RateLimitError as e:
+                adaptive.on_rate_limit()
+                error_log.append(f"attempt {attempt} [rate-limit]: {str(e)[:120]}")
+                out = None
+                wait = e.retry_after if e.retry_after > 0 else api_base_backoff * (2 ** (attempt - 1))
+                time.sleep(min(wait + random.uniform(0, 0.5), 30.0))
+
+            except Exception as e:
+                error_log.append(f"attempt {attempt}: {str(e)[:120]}")
+                out = None
+                if attempt < record_max_retries:
+                    backoff = min(api_base_backoff * (2 ** (attempt - 1)) + random.uniform(0, 0.3), 15.0)
+                    time.sleep(backoff)
+
+            finally:
+                job["concurrency_stats"] = adaptive.stats
+
+        if out is None:
+            out = {
+                "decision": "maybe",
+                "rationale": "full-text screening failed after retries – manual review required",
+                "inclusion_evaluation": [{"criterion": c, "status": "unclear"} for c in inc],
+                "exclusion_evaluation": [{"criterion": c, "status": "unclear"} for c in exc],
+            }
+
+        inc_eval = out.get("inclusion_evaluation") or []
+        exc_eval = out.get("exclusion_evaluation") or []
+        if not inc_eval and inc:
+            inc_eval = [{"criterion": c, "status": "unclear"} for c in inc]
+        if not exc_eval and exc:
+            exc_eval = [{"criterion": c, "status": "unclear"} for c in exc]
+
+        title = ""
+        try:
+            title = str((out or {}).get("title", "") or "").strip()
+        except Exception:
+            pass
+
+        entry = {
+            "id": idx,
+            "filename": filename,
+            "title": title,
+            "screening_decision": out["decision"],
+            "screening_reason": out["rationale"],
+            "inclusion_evaluation": inc_eval,
+            "exclusion_evaluation": exc_eval,
+            "_retries": attempts - 1,
+            "_error_log": error_log or None,
+        }
+        with lock:
+            results.append(entry)
+            job["processed"] = len(results)
+            job["results"] = list(results)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        futures = []
+        for idx, rec in enumerate(pdfs, start=1):
+            if job.get("status") == "cancelled":
+                break
+            futures.append(executor.submit(process_pdf, idx, rec))
+        for f in concurrent.futures.as_completed(futures):
+            if job.get("status") == "cancelled":
+                for pending in futures:
+                    pending.cancel()
+                break
+            try:
+                f.result()
+            except Exception:
+                pass
+
+    job["concurrency_stats"] = adaptive.stats
+    if job.get("status") != "cancelled":
+        job["status"] = "done"
+
+
+@app.post("/api/fulltext/preview-prompt")
+def fulltext_preview_prompt(payload: Dict[str, Any]):
+    """Return the rendered prompt that will be sent for a full-text article.
+    PDF is not required to preview the prompt."""
+    synopsis = str(payload.get("study_synopsis", "") or "")
+    inclusion = payload.get("inclusion_criteria") or []
+    exclusion = payload.get("exclusion_criteria") or []
+    filename = str(payload.get("filename", "") or "<article.pdf>")
+    if isinstance(inclusion, str):
+        inclusion = _ft_parse_criteria(inclusion)
+    if isinstance(exclusion, str):
+        exclusion = _ft_parse_criteria(exclusion)
+    prompt = _ft_preview_prompt(synopsis, inclusion, exclusion, filename=filename)
+    return {"prompt": prompt}
+
+
+@app.post("/api/fulltext/start")
+async def fulltext_start(
+    provider: str = "openai",
+    model: str = "gpt-5",
+    api_key: str = "",
+    study_synopsis: str = "",
+    inclusion_criteria: str = "",
+    exclusion_criteria: str = "",
+    params: str = "",
+    pdfs: List[UploadFile] = File(...),
+):
+    """Start a full-text screening job. PDFs are uploaded as multipart files."""
+    if not pdfs:
+        raise HTTPException(status_code=400, detail="No PDFs received.")
+
+    job_id = str(uuid.uuid4())
+    tmp_root = _Path(tempfile.gettempdir()) / "ai_tools_fulltext" / job_id
+    tmp_root.mkdir(parents=True, exist_ok=True)
+
+    saved: List[Dict[str, Any]] = []
+    for upload in pdfs:
+        safe_name = _Path(upload.filename or f"document_{len(saved)+1}.pdf").name
+        if not safe_name.lower().endswith(".pdf"):
+            safe_name = safe_name + ".pdf"
+        dest = tmp_root / safe_name
+        data = await upload.read()
+        if not data:
+            continue
+        if len(data) > _FT_MAX_PDF_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"PDF '{safe_name}' is {len(data) // (1024*1024)} MB; "
+                       f"max is {_FT_MAX_PDF_BYTES // (1024*1024)} MB."
+            )
+        dest.write_bytes(data)
+        saved.append({"filename": safe_name, "path": str(dest), "size": len(data)})
+
+    if not saved:
+        raise HTTPException(status_code=400, detail="All uploaded PDFs were empty.")
+
+    try:
+        params_obj = json.loads(params) if params else {}
+    except Exception:
+        params_obj = {}
+
+    inclusion_list = _ft_parse_criteria(inclusion_criteria)
+    exclusion_list = _ft_parse_criteria(exclusion_criteria)
+
+    FULLTEXT_JOBS[job_id] = {
+        "status": "running",
+        "provider": provider or "openai",
+        "model": model or "gpt-5",
+        "api_key": api_key,
+        "study_synopsis": study_synopsis or "",
+        "inclusion_criteria": inclusion_list,
+        "exclusion_criteria": exclusion_list,
+        "pdfs": saved,
+        "params": params_obj,
+        "processed": 0,
+        "total": len(saved),
+        "results": [],
+        "tmp_root": str(tmp_root),
+    }
+
+    th = threading.Thread(target=fulltext_worker, args=(job_id,), daemon=True)
+    th.start()
+    return {"job_id": job_id, "total": len(saved),
+             "files": [{"filename": s["filename"], "size": s["size"]} for s in saved]}
+
+
+@app.post("/api/fulltext/cancel/{job_id}")
+def fulltext_cancel(job_id: str):
+    job = FULLTEXT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    job["status"] = "cancelled"
+    return {"status": "cancelled"}
+
+
+@app.get("/api/fulltext/progress/{job_id}")
+def fulltext_progress(job_id: str):
+    job = FULLTEXT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    def event_stream():
+        last = -1
+        while True:
+            j = FULLTEXT_JOBS.get(job_id)
+            if not j:
+                yield f"data: {json.dumps({'status': 'error', 'detail': 'job missing'})}\n\n"
+                break
+            processed = j.get("processed", 0)
+            total = j.get("total", 0)
+            status = j.get("status")
+            if processed != last or status != "running":
+                payload = {"status": status, "processed": processed, "total": total}
+                if j.get("concurrency_stats"):
+                    payload["concurrency"] = j["concurrency_stats"]
+                try:
+                    results = j.get("results") or []
+                    if results:
+                        lr = results[-1]
+                        payload["last"] = {
+                            "id": lr.get("id"),
+                            "filename": lr.get("filename"),
+                            "decision": lr.get("screening_decision"),
+                            "rationale": lr.get("screening_reason"),
+                        }
+                except Exception:
+                    pass
+                if status == "error" and j.get("error"):
+                    payload["error"] = str(j.get("error"))
+                yield f"data: {json.dumps(payload)}\n\n"
+                last = processed
+            if status in {"done", "error", "cancelled"}:
+                break
+            time.sleep(0.5)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/fulltext/result/{job_id}")
+def fulltext_result(job_id: str, format: str = "xlsx"):
+    job = FULLTEXT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.get("status") != "done":
+        raise HTTPException(status_code=400, detail="job not finished")
+    rows = job.get("results", [])
+    if not rows:
+        return JSONResponse({"rows": []})
+
+    fieldnames = [
+        "id",
+        "filename",
+        "title",
+        "screening_decision",
+        "screening_reason",
+        "inclusion_evaluation",
+        "exclusion_evaluation",
+        "_retries",
+        "_error_log",
+    ]
+
+    if (format or "").lower() == "xlsx":
+        try:
+            from openpyxl import Workbook
+        except Exception:
+            raise HTTPException(status_code=500, detail="openpyxl not installed on server.")
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "fulltext"
+        ws.append(fieldnames)
+        for r in rows:
+            def _cell(val):
+                if isinstance(val, (list, dict)):
+                    try:
+                        return json.dumps(val, ensure_ascii=False)
+                    except Exception:
+                        return str(val)
+                return val
+            ws.append([_cell(r.get(k, "")) for k in fieldnames])
+        bio = io.BytesIO()
+        wb.save(bio)
+        return Response(
+            content=bio.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=fulltext_{job_id}.xlsx"},
+        )
+
+    import csv
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for r in rows:
+        row_out = {}
+        for k in fieldnames:
+            v = r.get(k, "")
+            if isinstance(v, (list, dict)):
+                try:
+                    v = json.dumps(v, ensure_ascii=False)
+                except Exception:
+                    v = str(v)
+            row_out[k] = v
+        writer.writerow(row_out)
+    return Response(
+        content=output.getvalue().encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=fulltext_{job_id}.csv"},
+    )
+
+
+# ===========================================================================
 #  REPORT GENERATION
 # ===========================================================================
 

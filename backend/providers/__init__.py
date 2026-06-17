@@ -42,12 +42,17 @@ def call_llm(
     params=None,
     max_retries: int = 5,
     base_backoff: float = 1.0,
+    pdf_bytes: bytes | None = None,
 ):
     """Route an LLM screening call to the correct provider.
 
     Returns a normalised dict:
         {"decision": "include"|"exclude"|"maybe", "rationale": str,
          "inclusion_evaluation": [...], "exclusion_evaluation": [...]}
+
+    When `pdf_bytes` is provided, the PDF is attached to the prompt and the
+    model reads it directly (no text extraction). Used by the full-text
+    screening pipeline.
     """
     fn = _PROVIDERS.get(provider)
     if fn is None:
@@ -61,6 +66,7 @@ def call_llm(
         params=params,
         max_retries=max_retries,
         base_backoff=base_backoff,
+        pdf_bytes=pdf_bytes,
     )
 
 

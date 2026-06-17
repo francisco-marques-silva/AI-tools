@@ -20,6 +20,7 @@
     onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js';s.defer=true;document.head.appendChild(s);}())"></script>
   <script src="js/utils.js" defer></script>
   <script src="js/screening.js" defer></script>
+  <script src="js/fulltext.js" defer></script>
   <script src="js/report.js" defer></script>
   <script src="js/app.js" defer></script>
 </head>
@@ -579,28 +580,305 @@
 
   <!-- ===== FULL-TEXT PANE ===== -->
   <div id="pane-fulltext" class="tab-pane" role="tabpanel">
-    <div class="wip-pane">
-      <div class="wip-icon">
-        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+
+    <!-- Pane Banner -->
+    <div class="pane-header pane-header-fulltext">
+      <div class="pane-header-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       </div>
-      <span class="wip-badge">In Development</span>
-      <h2 class="wip-title">Full-Text Screening</h2>
-      <p class="wip-desc">The full-text screening module is currently under development.<br>Soon you will be able to upload PDFs of articles included after TIAB screening and receive detailed inclusion/exclusion decisions based on the full text.</p>
-      <div class="wip-features">
-        <div class="wip-feature-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-          Batch PDF upload
+      <div class="pane-header-content">
+        <h2 class="pane-header-title">Full-Text Screening <span class="beta-tag">Beta</span></h2>
+        <p class="pane-header-desc">Upload PDFs of the articles that passed TIAB screening. The model reads the full text natively (no extraction) and returns include / exclude / maybe per article, with a per-criterion evaluation grounded in the article's content.</p>
+      </div>
+    </div>
+
+    <!-- How to use -->
+    <section class="card how-to-card" id="howToFullTextCard">
+      <details>
+        <summary class="card-title clickable">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          How to Use Full-Text Screening
+          <span class="how-to-badge">Guide</span>
+        </summary>
+        <div class="how-to-body">
+          <ol class="how-to-steps">
+            <li class="how-to-step">
+              <div class="step-title">Pick a provider and a model</div>
+              <p>Use a model that supports PDF input. <strong>Claude Sonnet 4.6</strong>, <strong>GPT-5</strong> family, and <strong>Gemini 3 Pro</strong> all do. The PDF is sent directly to the LLM — no text extraction step, so tables and figures are preserved.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Describe the study and refine criteria</div>
+              <p>Criteria here are <em>independent</em> of the TIAB tab — at full-text you usually evaluate more nuanced details (study design, sample, outcome measurement). Add one criterion per line.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Preview the prompt (optional)</div>
+              <p>Click <strong>Preview prompt</strong> to see the exact text the model will receive (with your criteria already substituted in). Useful for debugging or sharing with collaborators.</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Upload PDFs and run</div>
+              <p>Drag your PDFs into the upload zone (max 32 MB per file). Click <strong>Send to Backend</strong>. Progress is shown live; full-text screening is slower than TIAB (often 30–90 s per article).</p>
+            </li>
+            <li class="how-to-step">
+              <div class="step-title">Download the XLSX</div>
+              <p>Result columns: <code>filename</code>, extracted <code>title</code>, <code>decision</code>, detailed <code>rationale</code>, and per-criterion arrays (inclusion_evaluation, exclusion_evaluation) with status + evidence.</p>
+            </li>
+          </ol>
         </div>
-        <div class="wip-feature-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-          Automatic text extraction and reading
+      </details>
+    </section>
+
+    <!-- Step 1 -->
+    <div class="step-divider">
+      <span class="step-divider-num">1</span>
+      <span class="step-divider-label">Configuration &amp; Study Context</span>
+    </div>
+
+    <div class="grid-2col">
+
+      <!-- Configuration card (independent from TIAB) -->
+      <section class="card" id="ftConfigCard">
+        <h2 class="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          Configuration
+        </h2>
+
+        <div class="provider-selector" id="ftProviderSelector">
+          <button class="provider-btn active" data-provider="openai" type="button">
+            <span class="provider-badge openai-badge">ChatGPT</span>
+            <span class="provider-name">OpenAI</span>
+          </button>
+          <button class="provider-btn" data-provider="anthropic" type="button">
+            <span class="provider-badge claude-badge">Claude</span>
+            <span class="provider-name">Anthropic</span>
+          </button>
+          <button class="provider-btn" data-provider="google" type="button">
+            <span class="provider-badge gemini-badge">Gemini</span>
+            <span class="provider-name">Google</span>
+          </button>
         </div>
-        <div class="wip-feature-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-          Per-criterion decisions with rationale
+
+        <!-- OpenAI config -->
+        <div id="ft-config-openai" class="provider-config">
+          <label class="field">
+            <span>Model</span>
+            <select id="ftModelSelect">
+              <optgroup label="GPT-5 family (Reasoning, PDF-capable)">
+                <option value="gpt-5.5">GPT-5.5</option>
+                <option value="gpt-5.4">GPT-5.4</option>
+                <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+                <option value="gpt-5.2" selected>GPT-5.2</option>
+                <option value="gpt-5">GPT-5</option>
+                <option value="gpt-5-mini">GPT-5 Mini</option>
+              </optgroup>
+              <optgroup label="GPT-4o family (PDF via vision)">
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="field">
+            <span>OpenAI API Key</span>
+            <input id="ftApiKey" type="password" placeholder="sk-…" autocomplete="off" />
+          </label>
+          <div id="ftParamsReasoning" class="param-group hidden">
+            <div class="param-row">
+              <label class="field half">
+                <span>Verbosity</span>
+                <select id="ftVerbosity">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label class="field half">
+                <span>Reasoning Effort</span>
+                <select id="ftReasoningEffort">
+                  <option value="minimal">Minimal</option>
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="ftParamsChat" class="param-group hidden">
+            <label class="field">
+              <span>Temperature (0–2)</span>
+              <input id="ftTemperature" type="number" min="0" max="2" step="0.1" value="0.2" />
+            </label>
+          </div>
+        </div>
+
+        <!-- Claude config -->
+        <div id="ft-config-anthropic" class="provider-config hidden">
+          <label class="field">
+            <span>Model</span>
+            <select id="ftModelSelectClaude">
+              <optgroup label="Claude 4 family (PDF-native)">
+                <option value="claude-opus-4-7">Claude Opus 4.7</option>
+                <option value="claude-sonnet-4-6" selected>Claude Sonnet 4.6</option>
+                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="field">
+            <span>Anthropic API Key</span>
+            <input id="ftApiKeyClaude" type="password" placeholder="sk-ant-…" autocomplete="off" />
+          </label>
+          <div class="param-group">
+            <label class="field">
+              <span>Temperature (0–1)</span>
+              <input id="ftTemperatureClaude" type="number" min="0" max="1" step="0.1" value="0.2" />
+            </label>
+          </div>
+        </div>
+
+        <!-- Gemini config -->
+        <div id="ft-config-google" class="provider-config hidden">
+          <label class="field">
+            <span>Model</span>
+            <select id="ftModelSelectGoogle">
+              <optgroup label="Gemini 3 family (PDF-native)">
+                <option value="gemini-3.1-pro-preview" selected>Gemini 3.1 Pro</option>
+                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="field">
+            <span>Google API Key</span>
+            <input id="ftApiKeyGoogle" type="password" placeholder="AIza…" autocomplete="off" />
+          </label>
+          <div class="param-group">
+            <label class="field">
+              <span>Temperature (0–2)</span>
+              <input id="ftTemperatureGoogle" type="number" min="0" max="2" step="0.1" value="0.2" />
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- Study context (independent criteria) -->
+      <section class="card" id="ftContextCard">
+        <h2 class="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Full-Text Study Context
+        </h2>
+        <label class="field">
+          <span>PICO / Synopsis (for full-text screening)</span>
+          <textarea id="ftStudySynopsis" rows="3" placeholder="At full-text we re-evaluate the same review question with more depth. State the PICO again so the model has full context for each PDF."></textarea>
+        </label>
+
+        <div class="criteria-section">
+          <div class="criteria-header">
+            <span>Inclusion Criteria (Full-Text)</span>
+            <button type="button" id="ftAddInc" class="btn-icon" title="Add criterion">+</button>
+          </div>
+          <div id="ftInclusionList" class="criteria-list"></div>
+        </div>
+
+        <div class="criteria-section">
+          <div class="criteria-header">
+            <span>Exclusion Criteria (Full-Text)</span>
+            <button type="button" id="ftAddExc" class="btn-icon" title="Add criterion">+</button>
+          </div>
+          <div id="ftExclusionList" class="criteria-list"></div>
+        </div>
+
+        <div class="ft-prompt-actions">
+          <button type="button" id="ftPreviewPromptBtn" class="btn btn-ghost">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            Preview prompt
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-divider">
+      <span class="step-divider-num">2</span>
+      <span class="step-divider-label">Upload PDFs</span>
+    </div>
+
+    <section class="card" id="ftUploadCard">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
+        PDFs (one article per PDF)
+      </h2>
+
+      <div id="ftDropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload PDF files">
+        <input id="ftFileInput" type="file" accept="application/pdf,.pdf" multiple />
+        <div class="dropzone-content">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>Drag &amp; drop one or more <strong>.pdf</strong> files here</p>
+          <p class="hint">Max 32 MB per file · the PDF is sent natively (no text extraction)</p>
+        </div>
+      </div>
+
+      <div id="ftFileList" class="ft-file-list hidden"></div>
+    </section>
+
+    <!-- Step 3 -->
+    <div class="step-divider">
+      <span class="step-divider-num">3</span>
+      <span class="step-divider-label">Send &amp; Download</span>
+    </div>
+
+    <section class="card actions-card" id="ftActionsCard">
+      <div class="action-row">
+        <button id="ftBtnSend" class="btn btn-primary" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send to Backend
+        </button>
+        <button id="ftBtnClear" class="btn btn-ghost">Clear PDFs</button>
+        <span class="save-hint">Settings auto-save locally.</span>
+      </div>
+      <div id="ftErrorBanner" class="error-banner hidden"></div>
+    </section>
+
+    <section id="ftProgressCard" class="card hidden">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Full-Text Screening Progress
+      </h2>
+      <div class="progress-track">
+        <div id="ftProgressBar" class="progress-bar" style="width:0%"></div>
+      </div>
+      <div id="ftProgressLabel" class="progress-label">Awaiting…</div>
+      <div id="ftElapsedLabel" class="progress-elapsed hidden"></div>
+
+      <div class="progress-actions">
+        <button id="ftBtnCancel" class="btn btn-danger">Cancel</button>
+        <a id="ftDownloadLink" class="btn btn-primary hidden" href="#" download>Download XLSX</a>
+        <a id="ftDownloadCsvLink" class="btn btn-secondary hidden" href="#" download>Download CSV</a>
+        <button id="ftBtnRestart" class="btn btn-secondary hidden">Restart</button>
+      </div>
+
+      <div class="log-toggle-row">
+        <span class="muted">Live results (decision + rationale)</span>
+        <button id="ftBtnToggleLog" class="btn btn-ghost">Show live log</button>
+      </div>
+      <pre id="ftLiveLog" class="code hidden" style="max-height:240px; overflow:auto;"></pre>
+    </section>
+
+    <!-- Prompt preview modal -->
+    <div id="ftPromptModal" class="ft-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ftPromptModalTitle">
+      <div class="ft-modal-backdrop" data-close-modal></div>
+      <div class="ft-modal-content">
+        <div class="ft-modal-header">
+          <h3 id="ftPromptModalTitle">Prompt preview</h3>
+          <button class="ft-modal-close" data-close-modal aria-label="Close">×</button>
+        </div>
+        <div class="ft-modal-body">
+          <p class="ft-modal-note">This is the exact text that will be sent to the model alongside each PDF. The PDF itself is attached as a separate document content block — it is not included in this preview.</p>
+          <pre id="ftPromptPreviewText" class="code ft-prompt-text"></pre>
+        </div>
+        <div class="ft-modal-footer">
+          <button id="ftCopyPromptBtn" class="btn btn-ghost">Copy</button>
+          <button class="btn btn-primary" data-close-modal>Close</button>
         </div>
       </div>
     </div>
+
   </div><!-- /pane-fulltext -->
 
   <!-- ===== RISK OF BIAS PANE ===== -->

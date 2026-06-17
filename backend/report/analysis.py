@@ -281,6 +281,80 @@ def run_listfinal_check(ai_path: Path, listfinal_path: Path):
     }
 
 
+# ── Human reviewer vs Listfinal (gold standard baseline) ────────────
+
+def run_human_vs_lf(human_tiab_path: Path, listfinal_path: Path):
+    """How well the human reviewer's TIAB decisions capture the Listfinal
+    gold standard. Mirrors `run_listfinal_check` but for human decisions.
+
+    Also returns the size of the human TIAB universe and the number of
+    human positives, so downstream code can compute Sens/Spec/F1 vs LF.
+    """
+    hu_df = normalise_columns(load_file(str(human_tiab_path)))
+    lf_df = normalise_columns(load_file(str(listfinal_path)))
+
+    # Human TIAB files use `decision`; AI files use `screening_decision`.
+    if "decision" in hu_df.columns and "screening_decision" not in hu_df.columns:
+        hu_df = hu_df.rename(columns={"decision": "screening_decision"})
+
+    hu_df["_title_key"] = hu_df["title"].apply(normalise_title)
+    lf_df["_title_key"] = lf_df["title"].apply(normalise_title)
+
+    hu_df["_bin"] = hu_df["screening_decision"].apply(binarise_decision)
+    valid_universe = hu_df["_bin"].isin(["maybe", "exclude"])
+    n_universe = int(valid_universe.sum())
+    n_human_pos = int((hu_df.loc[valid_universe, "_bin"] == "maybe").sum())
+
+    results = []
+    for _, row in lf_df.iterrows():
+        tk = normalise_title(row["title"])
+        match = hu_df[hu_df["_title_key"] == tk]
+        if match.empty:
+            results.append({"title": row["title"], "found": False,
+                             "human_decision": "not_found"})
+        else:
+            hu_dec = normalise_decision(match.iloc[0]["screening_decision"])
+            captured = hu_dec in ("maybe", "include")
+            results.append({
+                "title": row["title"],
+                "found": True,
+                "human_decision": hu_dec,
+                "captured": captured,
+            })
+
+    df_results = pd.DataFrame(results)
+    n_total = len(df_results)
+    n_found = int(df_results["found"].sum()) if not df_results.empty else 0
+    n_not_found = n_total - n_found
+
+    found_df = df_results[df_results["found"]].copy() if not df_results.empty else df_results
+    if not found_df.empty:
+        found_df["captured"] = found_df["captured"].astype(bool)
+    n_captured = int(found_df["captured"].sum()) if not found_df.empty else 0
+    n_missed = int((~found_df["captured"]).sum()) if not found_df.empty else 0
+    capture_rate = n_captured / n_found if n_found > 0 else float("nan")
+    miss_rate = n_missed / n_found if n_found > 0 else float("nan")
+
+    missed_titles = (found_df[~found_df["captured"]]["title"].tolist()
+                     if not found_df.empty else [])
+    not_found_titles = (df_results[~df_results["found"]]["title"].tolist()
+                        if not df_results.empty else [])
+
+    return {
+        "n_listfinal": n_total,
+        "n_found": n_found,
+        "n_not_found": n_not_found,
+        "n_captured": n_captured,
+        "n_missed": n_missed,
+        "capture_rate": capture_rate,
+        "miss_rate": miss_rate,
+        "missed_titles": missed_titles,
+        "not_found_titles": not_found_titles,
+        "n_universe": n_universe,
+        "n_human_pos": n_human_pos,
+    }
+
+
 # ── Test-retest (reproducibility) ────────────────────────────────────
 
 def run_test_retest(path_t1: Path, path_t2: Path):

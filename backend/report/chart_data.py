@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .utils import normalise_model_name, compute_f1_lf
+from .utils import normalise_model_name, compute_f1_lf, compute_metrics_vs_lf
 
 
 # =====================================================================
@@ -237,7 +237,11 @@ def _build_workload_reduction(projects, all_results, metadados):
 
 def _build_eff_frontier_runs(projects, all_results):
     """Sheet: eff_frontier_runs  —  Project, Model, Test, AI_Positive_Rate_pct,
-    LF_Capture_pct, Efficiency_Score."""
+    LF_Capture_pct, Specificity_LF_pct, F1_LF, Efficiency_Score.
+
+    Specificity_LF_pct is the model's specificity against the Listfinal gold
+    standard — used as the X axis of the efficiency frontier charts.
+    """
     diag = all_results.get("diagnostic", {})
     lf = all_results.get("listfinal", {})
     rows = []
@@ -257,14 +261,47 @@ def _build_eff_frontier_runs(projects, all_results):
                 eff = (l["capture_rate"] * (1 - ai_pos / n_total)
                        if l and not np.isnan(l["capture_rate"]) and n_total > 0
                        else float("nan"))
+                mlf = compute_metrics_vs_lf(n_total, ai_pos, l)
                 rows.append({
                     "Project": proj["name"],
                     "Model": mname,
                     "Test": tn,
                     "AI_Positive_Rate_pct": ai_pos_rate,
                     "LF_Capture_pct": lf_cap,
+                    "Specificity_LF_pct": mlf["spec_lf"] * 100 if not np.isnan(mlf["spec_lf"]) else float("nan"),
+                    "F1_LF": mlf["f1_lf"],
                     "Efficiency_Score": eff,
                 })
+    return pd.DataFrame(rows) if rows else None
+
+
+def _build_human_vs_lf(projects, all_results):
+    """Sheet: human_vs_lf  —  Project, Sens_LF_pct, Spec_LF_pct, F1_LF,
+    Inclusion_Rate_pct, N_universe.
+
+    Human reviewer's TIAB decisions vs Listfinal gold standard. One row per project.
+    """
+    hu_lf = all_results.get("human_listfinal", {})
+    rows = []
+    for pn in sorted(projects):
+        h = hu_lf.get(pn)
+        if not h:
+            continue
+        proj = projects[pn]
+        n_uni = h.get("n_universe")
+        n_pos = h.get("n_human_pos")
+        m = compute_metrics_vs_lf(n_uni, n_pos, h)
+        rows.append({
+            "Project": proj["name"],
+            "Sens_LF_pct": m["sens_lf"] * 100 if not np.isnan(m["sens_lf"]) else float("nan"),
+            "Spec_LF_pct": m["spec_lf"] * 100 if not np.isnan(m["spec_lf"]) else float("nan"),
+            "F1_LF": m["f1_lf"],
+            "Inclusion_Rate_pct": m["inclusion_rate"] * 100 if not np.isnan(m["inclusion_rate"]) else float("nan"),
+            "N_universe": n_uni,
+            "N_positives": n_pos,
+            "LF_total": h.get("n_listfinal"),
+            "LF_not_in_TIAB": h.get("n_not_found"),
+        })
     return pd.DataFrame(rows) if rows else None
 
 
@@ -582,6 +619,7 @@ def export_chart_data(projects, all_results, metadados, output_dir: Path) -> Pat
         ("sens_spec_tradeoff",       lambda: _build_sens_spec_tradeoff(projects, all_results)),
         ("model_ranking_heatmap",    lambda: _build_model_ranking_heatmap(projects, all_results, metadados)),
         ("fulltext_hours_saved",     lambda: _build_fulltext_hours_saved(projects, all_results)),
+        ("human_vs_lf",              lambda: _build_human_vs_lf(projects, all_results)),
     ]
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

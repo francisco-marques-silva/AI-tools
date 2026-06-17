@@ -432,6 +432,9 @@ if "eff_frontier_runs" in sheets:
         ncols = min(n_panels, 3)
         nrows = (n_panels + ncols - 1) // ncols
 
+        # Human-vs-LF baseline (one row per project) if available
+        df_human = sheets.get("human_vs_lf") if "human_vs_lf" in sheets else None
+
         fig, axes = plt.subplots(nrows, ncols,
                                  figsize=(5.5 * ncols, 5 * nrows), squeeze=False)
         fig.suptitle("Efficiency Frontier by Project (Individual Runs)",
@@ -448,29 +451,37 @@ if "eff_frontier_runs" in sheets:
             r, c = divmod(idx, ncols)
             ax = axes[r][c]
             ax.set_facecolor("#FAFAFA")
-            ax.axhspan(95, 106, color="#D5F5E3", alpha=0.2, zorder=0)
+            # Ideal zone — top-right (high spec + high sens)
+            ax.axhspan(95, 106, xmin=0.5, color="#D5F5E3", alpha=0.2, zorder=0)
             sub = df[df["Project"] == proj]
             for _, row in sub.iterrows():
                 marker = ("o" if row["Test"] == 1
                           else ("s" if row["Test"] == 2 else "^"))
-                ax.scatter(row["AI_Positive_Rate_pct"], row["LF_Capture_pct"],
+                ax.scatter(row["Specificity_LF_pct"], row["LF_Capture_pct"],
                            s=120, color=models_seen[row["Model"]],
                            marker=marker, edgecolors="white", linewidth=1.2,
                            zorder=5, alpha=0.9)
+            # Human baseline overlay (star)
+            if df_human is not None and not df_human.empty:
+                hsub = df_human[df_human["Project"] == proj]
+                for _, hrow in hsub.iterrows():
+                    ax.scatter(hrow["Spec_LF_pct"], hrow["Sens_LF_pct"],
+                               s=220, color="#000", marker="*",
+                               edgecolors="white", linewidth=1.5,
+                               zorder=6, label="Human baseline")
             ax.axhline(y=95, color="#27AE60", linestyle="--", alpha=0.5,
                        linewidth=1)
             ax.set_title(proj, fontsize=10, fontweight="bold", pad=8)
             if c == 0:
-                ax.set_ylabel("LF Capture (%)", fontsize=9)
+                ax.set_ylabel("Sensitivity vs Listfinal (%)", fontsize=9)
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
             ax.spines["left"].set_linewidth(0.6)
             ax.spines["bottom"].set_linewidth(0.6)
-            ax.set_ylim(50, 106)
+            ax.set_ylim(0, 105)
             if r == nrows - 1:
-                ax.set_xlabel("TIAB Inclusion Rate (%) — lower = less full-text work",
-                              fontsize=8)
-            ax.set_xlim(-2, 102)
+                ax.set_xlabel("Specificity vs Listfinal (%)", fontsize=8)
+            ax.set_xlim(0, 105)
 
         for idx in range(n_panels, nrows * ncols):
             r2, c2 = divmod(idx, ncols)
@@ -486,6 +497,11 @@ if "eff_frontier_runs" in sheets:
                               markersize=6, linestyle="None", label="Test 1"))
         handles.append(Line2D([0], [0], marker="s", color="gray",
                               markersize=6, linestyle="None", label="Test 2"))
+        if df_human is not None and not df_human.empty:
+            handles.append(Line2D([0], [0], marker="*", color="#000",
+                                   markersize=12, linestyle="None",
+                                   markeredgecolor="white", markeredgewidth=1,
+                                   label="Human baseline"))
         fig.legend(handles=handles, loc="lower center", ncol=len(handles),
                    fontsize=8, framealpha=0.9, bbox_to_anchor=(0.5, -0.02))
         plt.tight_layout(rect=[0, 0.04, 1, 0.97])
@@ -506,6 +522,7 @@ if "eff_frontier_runs" in sheets:
     df = sheets["eff_frontier_runs"]
     if not df.empty:
         projects = df["Project"].unique()
+        df_human = sheets.get("human_vs_lf") if "human_vs_lf" in sheets else None
         models_seen = {}
         for _, row in df.iterrows():
             if row["Model"] not in models_seen:
@@ -521,37 +538,43 @@ if "eff_frontier_runs" in sheets:
         for idx, proj in enumerate(projects):
             ax = axes[0][idx]
             ax.set_facecolor("#FAFAFA")
-            ax.axhspan(95, 106, color="#D5F5E3", alpha=0.2, zorder=0)
+            ax.axhspan(95, 106, xmin=0.5, color="#D5F5E3", alpha=0.2, zorder=0)
             sub = df[df["Project"] == proj]
             for model, color in models_seen.items():
                 ms = sub[sub["Model"] == model]
                 if ms.empty:
                     continue
-                mx = ms["AI_Positive_Rate_pct"].mean()
+                mx = ms["Specificity_LF_pct"].mean()
                 my = ms["LF_Capture_pct"].mean()
-                sx = ms["AI_Positive_Rate_pct"].std() if len(ms) > 1 else 0
+                sx = ms["Specificity_LF_pct"].std() if len(ms) > 1 else 0
                 sy = ms["LF_Capture_pct"].std() if len(ms) > 1 else 0
                 ax.errorbar(mx, my, xerr=sx, yerr=sy, fmt="none",
                             ecolor=color, elinewidth=1.2, capsize=4,
                             capthick=1, alpha=0.5, zorder=4)
                 ax.scatter(mx, my, s=200, color=color, edgecolors="white",
                            linewidth=2, zorder=6)
-                ax.scatter(ms["AI_Positive_Rate_pct"], ms["LF_Capture_pct"],
+                ax.scatter(ms["Specificity_LF_pct"], ms["LF_Capture_pct"],
                            s=25, color=color, alpha=0.35, edgecolors="none",
                            zorder=3)
+            # Human baseline overlay
+            if df_human is not None and not df_human.empty:
+                hsub = df_human[df_human["Project"] == proj]
+                for _, hrow in hsub.iterrows():
+                    ax.scatter(hrow["Spec_LF_pct"], hrow["Sens_LF_pct"],
+                               s=260, color="#000", marker="*",
+                               edgecolors="white", linewidth=1.8, zorder=7)
             ax.axhline(y=95, color="#27AE60", linestyle="--", alpha=0.5,
                        linewidth=1)
             ax.set_title(proj, fontsize=10, fontweight="bold", pad=8)
             if idx == 0:
-                ax.set_ylabel("LF Capture (%)", fontsize=9)
+                ax.set_ylabel("Sensitivity vs Listfinal (%)", fontsize=9)
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
             ax.spines["left"].set_linewidth(0.6)
             ax.spines["bottom"].set_linewidth(0.6)
-            ax.set_ylim(50, 106)
-            ax.set_xlabel("TIAB Inclusion Rate (%) — lower = less full-text work",
-                          fontsize=8)
-            ax.set_xlim(-2, 102)
+            ax.set_ylim(0, 105)
+            ax.set_xlabel("Specificity vs Listfinal (%)", fontsize=8)
+            ax.set_xlim(0, 105)
 
         handles = []
         for model, color in models_seen.items():
@@ -561,6 +584,11 @@ if "eff_frontier_runs" in sheets:
                                   markersize=8, linestyle="None",
                                   markeredgecolor="white", markeredgewidth=0.6,
                                   label=f"{model} (Eff: {eff:.3f})"))
+        if df_human is not None and not df_human.empty:
+            handles.append(Line2D([0], [0], marker="*", color="#000",
+                                   markersize=12, linestyle="None",
+                                   markeredgecolor="white", markeredgewidth=1,
+                                   label="Human baseline"))
         fig.legend(handles=handles, loc="lower center", ncol=len(handles),
                    fontsize=8, framealpha=0.9, bbox_to_anchor=(0.5, -0.04))
         plt.tight_layout(rect=[0, 0.05, 1, 0.97])
@@ -578,6 +606,7 @@ if "eff_frontier_runs" in sheets:
 if "eff_frontier_runs" in sheets:
     df = sheets["eff_frontier_runs"]
     if not df.empty:
+        df_human = sheets.get("human_vs_lf") if "human_vs_lf" in sheets else None
         models_seen = {}
         for _, row in df.iterrows():
             if row["Model"] not in models_seen:
@@ -587,9 +616,11 @@ if "eff_frontier_runs" in sheets:
 
         fig, ax = plt.subplots(figsize=(9, 6))
         ax.set_facecolor("#FAFAFA")
-        ax.axhspan(95, 106, xmin=0, xmax=0.5, color="#D5F5E3", alpha=0.25,
+        # Ideal zone — top-right (high specificity + high sensitivity)
+        ax.axhspan(95, 106, xmin=0.5, xmax=1, color="#D5F5E3", alpha=0.25,
                    zorder=0)
-        ax.axhspan(0, 95, xmin=0.5, xmax=1, color="#FADBD8", alpha=0.18,
+        # Bottom-left = poor zone
+        ax.axhspan(0, 50, xmin=0, xmax=0.5, color="#FADBD8", alpha=0.18,
                    zorder=0)
 
         legend_items = []
@@ -597,9 +628,9 @@ if "eff_frontier_runs" in sheets:
             ms = df[df["Model"] == model]
             if ms.empty:
                 continue
-            mean_x = ms["AI_Positive_Rate_pct"].mean()
+            mean_x = ms["Specificity_LF_pct"].mean()
             mean_y = ms["LF_Capture_pct"].mean()
-            std_x = ms["AI_Positive_Rate_pct"].std() if len(ms) > 1 else 0
+            std_x = ms["Specificity_LF_pct"].std() if len(ms) > 1 else 0
             std_y = ms["LF_Capture_pct"].std() if len(ms) > 1 else 0
             mean_score = ms["Efficiency_Score"].mean()
             ax.errorbar(mean_x, mean_y, xerr=std_x, yerr=std_y, fmt="none",
@@ -613,23 +644,34 @@ if "eff_frontier_runs" in sheets:
                        markeredgewidth=1,
                        label=f"{model} (Eff: {mean_score:.3f})"))
 
+        # Human baseline — pooled across projects
+        if df_human is not None and not df_human.empty:
+            hx = df_human["Spec_LF_pct"].mean()
+            hy = df_human["Sens_LF_pct"].mean()
+            ax.scatter(hx, hy, s=320, color="#000", marker="*",
+                       edgecolors="white", linewidth=2, zorder=7)
+            legend_items.append(
+                Line2D([0], [0], marker="*", color="#000", markersize=14,
+                       linestyle="None", markeredgecolor="white",
+                       markeredgewidth=1.2, label="Human baseline (mean)"))
+
         ax.axhline(y=95, color="#27AE60", linestyle="--", alpha=0.6,
                    linewidth=1.2)
-        ax.annotate("IDEAL ZONE", xy=(5, 102), fontsize=9, fontweight="bold",
-                    color="#27AE60", alpha=0.5, ha="left")
+        ax.annotate("IDEAL ZONE", xy=(96, 102), fontsize=9, fontweight="bold",
+                    color="#27AE60", alpha=0.5, ha="right")
         ax.set_title("Efficiency Frontier: Overall Mean per Model (± 1 SD)",
                      fontsize=10, fontweight="bold", pad=8)
-        ax.set_ylabel("Listfinal Capture Rate (%)", fontsize=9)
-        ax.set_xlabel("TIAB Inclusion Rate (%) — lower = more selective, less full-text work",
+        ax.set_ylabel("Sensitivity vs Listfinal (%)", fontsize=9)
+        ax.set_xlabel("Specificity vs Listfinal (%) — higher = better at excluding non-relevant",
                       fontsize=9)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_linewidth(0.6)
         ax.spines["bottom"].set_linewidth(0.6)
-        ax.set_ylim(50, 106)
-        ax.set_xlim(-2, 102)
+        ax.set_ylim(0, 105)
+        ax.set_xlim(0, 105)
         legend_items.append(Line2D([0], [0], color="#27AE60", linestyle="--",
-                                   label="95% Capture target"))
+                                   label="95% Sensitivity target"))
         ax.legend(handles=legend_items, loc="lower left", fontsize=8,
                   framealpha=0.9)
         plt.tight_layout()

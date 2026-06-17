@@ -4,7 +4,9 @@ openai_provider.py — OpenAI (ChatGPT / GPT) provider.
 Supports:
   - Responses API      (gpt-5* family):   POST /v1/responses
   - Chat Completions   (all other GPT):   POST /v1/chat/completions
+  - Inline PDF input on both endpoints when `pdf_bytes` is supplied
 """
+import base64
 import random
 import time
 from collections import deque
@@ -24,13 +26,37 @@ def call_openai(
     params: Optional[Dict[str, Any]] = None,
     max_retries: int = 5,
     base_backoff: float = 1.0,
+    pdf_bytes: Optional[bytes] = None,
 ) -> Dict[str, Any]:
+    """Call the OpenAI API and return a normalised screening result.
+
+    When `pdf_bytes` is provided, the PDF is attached inline as a base64
+    `input_file` (Responses API) or `file` content (Chat Completions).
+    """
     is_reasoning = model.startswith(_REASONING_PREFIX)
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
+    pdf_b64 = None
+    if pdf_bytes:
+        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
+
     if is_reasoning:
         url = "https://api.openai.com/v1/responses"
-        body: Dict[str, Any] = {"model": model, "input": prompt}
+        if pdf_b64:
+            body: Dict[str, Any] = {
+                "model": model,
+                "input": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "input_file",
+                          "filename": "document.pdf",
+                          "file_data": f"data:application/pdf;base64,{pdf_b64}"},
+                        {"type": "input_text", "text": prompt},
+                    ],
+                }],
+            }
+        else:
+            body = {"model": model, "input": prompt}
         if params:
             if params.get("reasoning_effort"):
                 body["reasoning"] = {"effort": params["reasoning_effort"]}
@@ -38,19 +64,29 @@ def call_openai(
                 body["text"] = {"verbosity": params["verbosity"]}
     else:
         url = "https://api.openai.com/v1/chat/completions"
+        if pdf_b64:
+            user_content: Any = [
+                {"type": "file",
+                  "file": {"filename": "document.pdf",
+                           "file_data": f"data:application/pdf;base64,{pdf_b64}"}},
+                {"type": "text", "text": prompt},
+            ]
+        else:
+            user_content = prompt
         body = {
             "model": model,
             "messages": [
                 {"role": "system", "content": SYSTEM_INSTRUCTION},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": user_content},
             ],
         }
         if params and "temperature" in params:
             body["temperature"] = float(params["temperature"])
 
     r = None
+    request_timeout = 300 if pdf_bytes else 60
     for attempt in range(1, max_retries + 1):
-        r = requests.post(url, headers=headers, json=body, timeout=60)
+        r = requests.post(url, headers=headers, json=body, timeout=request_timeout)
         if r.status_code == 200:
             break
         if r.status_code == 429:
